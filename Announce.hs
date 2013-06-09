@@ -1,8 +1,11 @@
 module Announce where
 
+import Control.Monad
 import Data.Digest.SHA1
 import Data.Word
 import Network.Socket
+import Test.QuickCheck.Arbitrary
+import Test.QuickCheck.Gen
 import qualified Data.ByteString as B
 
 instance Ord Word160 where
@@ -19,6 +22,45 @@ instance Ord Word160 where
               x -> x
           x -> x
       x -> x
+
+instance Arbitrary Word160 where
+  arbitrary = do
+    [a,b,c,d,e] <- replicateM 5 arbitrary
+    return $ Word160 a b c d e
+
+  shrink (Word160 a b c d e) = do
+    [a', b', c', d', e'] <- mapM shrink [a, b, c, d, e]
+    return $ Word160 a b c d e
+
+instance Arbitrary PortNumber where
+  arbitrary = liftM PortNum arbitrary
+  shrink (PortNum p) = map PortNum $ shrink p
+
+instance Arbitrary SockAddr where
+  arbitrary =
+    oneof [
+      liftM2 SockAddrInet arbitrary arbitrary,
+      liftM4 SockAddrInet6 arbitrary arbitrary arbitrary arbitrary
+    ]
+
+  shrink (SockAddrInet port addr) = do
+    port' <- shrink port
+    addr' <- shrink addr
+    return $ SockAddrInet port' addr'
+
+  shrink (SockAddrInet6 flow port scope addr) = do
+    flow' <- shrink flow
+    port' <- shrink port
+    scope' <- shrink scope
+    addr' <- shrink addr
+    return $ SockAddrInet6 flow port' scope addr'
+
+instance Arbitrary Peer where
+  arbitrary = liftM2 Peer arbitrary arbitrary
+  shrink peer = do
+    peerId' <- shrink (peerId peer)
+    peerAddr' <- shrink (peerAddr peer)
+    return Peer { peerId = peerId', peerAddr = peerAddr' }
 
 data Announce = Announce { 
     anInfoHash :: ! Word160
