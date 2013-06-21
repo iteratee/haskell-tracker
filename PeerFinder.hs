@@ -139,12 +139,14 @@ emptyHashRecord = do
 data ProtocolHashRecord = ProtocolHashRecord {
     phrSeeders :: ! RandomPeerList
   , phrLeechers :: ! RandomPeerList
+  , phrCompleteCount :: ! Word32
 }
 
 emptyProtocolHashRecord :: ProtocolHashRecord
 emptyProtocolHashRecord = ProtocolHashRecord {
     phrSeeders = emptyPeerList
   , phrLeechers = emptyPeerList
+  , phrCompleteCount = 0
 }
 
 getPeers :: Int -> MVar ProtocolHashRecord -> IO [Peer]
@@ -179,6 +181,15 @@ getPeersGen nSeeders nLeechers mphr = do
                 max leechersFloor leechersBackfill)
   let (seederList, seeders') = evalRand (getNPeers nSeeders' seeders) g1
       (leecherList, leechers') = evalRand (getNPeers nLeechers' leechers) g2
-  putMVar mphr $ ProtocolHashRecord {
+  putMVar mphr $ phr {
       phrSeeders = seeders', phrLeechers = leechers' }
   return (seederList ++ leecherList)
+
+getPeerCounts :: MVar ProtocolHashRecord -> IO (Word32, Word32, Word32)
+getPeerCounts mphr = do
+  phr <- readMVar mphr
+  let seeders = (phrSeeders phr)
+      leechers = (phrLeechers phr)
+      completed = (phrCompleteCount phr)
+  return (fromIntegral $ peerSize seeders,
+          fromIntegral $ peerSize leechers, completed)
