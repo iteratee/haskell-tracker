@@ -1,13 +1,19 @@
 module Announce where
 
+import Bencode
 import Control.Monad
 import Data.Binary
+import Data.Binary.Builder
+import Data.Bits
 import Data.Digest.SHA1
+import Data.Monoid
 import Data.Word
 import Network.Socket
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Char8 as B8
 
 instance Ord Word160 where
   compare (Word160 a1 b1 c1 d1 e1) (Word160 a2 b2 c2 d2 e2) =
@@ -72,31 +78,41 @@ data AnnounceResponse =
       , plPeers :: [Peer]
     } deriving (Eq, Ord, Show)
 
-bencodePeers4 :: (BencodeC b) => AnnounceResponse -> b
-bencodePeers4 (Failure msg) =
+bencodeResponse4 :: (BencodeC b) => AnnounceResponse -> b
+bencodeResponse4 (Failure msg) =
   beDict $ beDictAlgCons (B8.pack "failure") (beString msg) $ beDictAlgNil
-bencodePeers4 (PeerList ival _ _ peers) =
+bencodeResponse4 (PeerList ival _ _ peers) =
   beDict $ beDictAlgCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictAlgCons (B8.pack "peers") packPeers4 $ beDictAlgNil
-bencodePeers6 (PeerList ival _ _ peers) =
+    beDictAlgCons (B8.pack "peers") (bencodePeers4 peers) $ beDictAlgNil
+bencodeResponse6 :: (BencodeC b) => AnnounceResponse -> b
+bencodeResponse6 (Failure msg) =
+  beDict $ beDictAlgCons (B8.pack "failure") (beString msg) $ beDictAlgNil
+bencodeResponse6 (PeerList ival _ _ peers) =
   beDict $ beDictAlgCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictAlgCons (B8.pack "peers6") packPeers6 $ beDictAlgNil
+    beDictAlgCons (B8.pack "peers6") (bencodePeers6 peers) $ beDictAlgNil
 
-packPeers4 :: (BencodeC b) => [Peer] -> b
-packPeers4 peers = beString . toStrict . toLazyByteString $
-  foldr packPeer4 mempty peers
-packPeers6 :: (BencodeC b) => [Peer] -> b
-packPeers6 peers = beString . toStrict . toLazyByteString $
-  foldr packPeer6 mempty peers
+bencodePeers4 :: (BencodeC b) => [Peer] -> b
+bencodePeers4 peers = beString . BL.toStrict . toLazyByteString $
+  foldr bencodePeer4 mempty peers
+bencodePeers6 :: (BencodeC b) => [Peer] -> b
+bencodePeers6 peers = beString . BL.toStrict . toLazyByteString $
+  foldr bencodePeer6 mempty peers
 
-packPeer4 :: Peer -> Builder -> Builder
-packPeer4 p bldr =
+bencodePeer4 :: Peer -> Builder -> Builder
+bencodePeer4 p bldr =
   case (peerAddr p) of
-    SockAddrInet p h -> word32BE h <> word16LE p <> bldr
+    SockAddrInet (PortNum p) h -> putWord32be h <> putWord16be p <> bldr
     _ -> bldr
-packPeer6 :: Peer -> Builder -> Builder
-packPeer6 p bldr =  
+bencodePeer6 :: Peer -> Builder -> Builder
+bencodePeer6 p bldr =  
   case (peerAddr p) of
-    SockAddrInet6 p _ (h0,h1,h2,h3) _ ->
-      word32BE h0 <> word32BE h1 <> word32BE h2 <> word32BE h3 <>word16LE p <> bldr
+    SockAddrInet6 (PortNum p) _ (h0,h1,h2,h3) _ ->
+      putWord32be h0 <> putWord32be h1 <> putWord32be h2 <> putWord32be h3 <> putWord16be p <> bldr
     _ -> bldr
+
+isRfc1918 :: Word32 -> Bool
+isRfc1918 addr =
+  addr .&. 0xff000000 == 0x0a000000 ||  -- 10.0.0.0
+  addr .&. 0xfff00000 == 0xac100000 ||
+  addr .&. 0xffff0000 == 0xc0a80000
+

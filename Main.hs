@@ -5,14 +5,17 @@ import AnnounceServer
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Trans.Reader
+import Data.Monoid
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
+import SnapServer
+import Snap.Http.Server.Config hiding (defaultConfig)
+import Snap.Http.Server hiding (defaultConfig)
 import UdpProtocol
+import qualified Data.ByteString.Char8 as B8
 
 oneMinuteMicros :: Int
 oneMinuteMicros = 60 * 1000 * 1000
-
-
 
 udpServerThread :: AnnounceEnv -> IO ()
 udpServerThread anEnv = do
@@ -33,7 +36,6 @@ udpServerThread anEnv = do
     acceptAndProcessRequests sock env = forever $ do
       (msg, addr) <- recvFrom sock 1024
       forkIO $ do
-        putStrLn $ "got packet from: " ++ (show addr)
         runReaderT (handleUdpRequest sock addr msg) env
     cycleKeyThread env = forever $ do
       threadDelay (2 * oneMinuteMicros)
@@ -45,10 +47,22 @@ pruneInactiveThread anEnv = forever $ do
   threadDelay oneMinuteMicros
   runReaderT pruneQueue anEnv
 
+snapServerThread :: AnnounceEnv -> IO ()
+snapServerThread env = do
+  putStrLn "Starting snap server."
+  let baseConfig = setVerbose True $ setPort 6666 mempty
+      config4 = setBind (B8.pack "0.0.0.0") baseConfig
+      config6 = setBind (B8.pack "::") $ setPort 6667 baseConfig
+  forkIO $ 
+    httpServe config4 (completeSnap env)
+  httpServe config6 (completeSnap env)
+    
+
 main = do
   anSt <- emptyAnnounceState
   let anEnv = AnnounceEnv {
         anSt = anSt, anConf = defaultConfig }
   forkIO $ udpServerThread anEnv
   forkIO $ pruneInactiveThread anEnv
+  forkIO $ snapServerThread anEnv
   forever $ threadDelay oneMinuteMicros

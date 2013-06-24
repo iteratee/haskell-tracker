@@ -51,7 +51,7 @@ defaultConfig = AnnounceConfig {
   , ancMaxPeers = 50
   , ancDefaultPeers = 30
   , ancIdlePeerTimeout = 360 -- Six minutes, three announce intervals
-  , ancAddrs = [("0.0.0.0", "6666"), ("::", "6666")]
+  , ancAddrs = [("0.0.0.0", "6666"), ("::", "6667")]
 }
 
 data AnnounceEnv = AnnounceEnv {
@@ -94,9 +94,6 @@ pruneQueue = do
       let old_now = addUTCTime (fromIntegral $ negate timeout) now
           (old, queue') = S.split (old_now, Nothing) queue
           activity' = foldl' (flip (M.delete . fromJust . snd)) activity (S.elems old)
-      liftIO $ putStrLn ("timeout: " ++ (show timeout))
-      liftIO $ putStrLn ("now : " ++ (show now) ++ (" old_now: ") ++ (show old_now))
-      liftIO $ putStrLn ("Removing: " ++ (show old) ++ " from the active roster.")
       liftIO $ putMVar hashActivityM activity'
       liftIO $ putMVar hashQueueM queue'
       liftIO $ forM_ [hrInet4 hr, hrInet6 hr] $ \phrM -> do
@@ -156,12 +153,9 @@ updateActivity st hash peer = do
   where
     updateHashActivity peer lastSeenM queueM = do
       let pid = (peerId peer)
-      putStrLn $ "Updating activity for peer: " ++ (show pid)
       now <- getCurrentTime
       lastSeen <- takeMVar lastSeenM
       queue <- takeMVar queueM
-      putStrLn $ "lastSeen roster: " ++ (show lastSeen)
-      putStrLn $ "deletion queue: " ++ (show queue)
       case M.lookup pid lastSeen of
         Nothing -> do
           putMVar lastSeenM $ M.insert pid now lastSeen
@@ -172,9 +166,7 @@ updateActivity st hash peer = do
             S.insert (now, Just pid) $
             S.delete (old_now, Just pid) queue
           readMVar lastSeenM >>= (\lastSeen -> 
-            putStrLn $ "updated lastSeen roster: " ++ (show lastSeen))
           readMVar queueM >>= (\queue -> 
-            putStrLn $ "updated deletion queue: " ++ (show queue))
 
 getHashRecord :: AnnounceState -> InfoHash -> IO HashRecord
 getHashRecord st hash = do
