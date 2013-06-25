@@ -102,7 +102,9 @@ bencodePeers6 peers = beString . BL.toStrict . toLazyByteString $
 bencodePeer4 :: Peer -> Builder -> Builder
 bencodePeer4 p bldr =
   case (peerAddr p) of
-    SockAddrInet (PortNum p) h -> putWord32be h <> putWord16be p <> bldr
+    -- HostAddress is stored in network byte order. So it needs to be written
+    -- out as stored.
+    SockAddrInet (PortNum p) h -> putWord32host h <> putWord16be p <> bldr
     _ -> bldr
 bencodePeer6 :: Peer -> Builder -> Builder
 bencodePeer6 p bldr =  

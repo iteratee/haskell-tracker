@@ -171,7 +171,9 @@ packPeers4 = mapM_ packPeer4
   where
     packPeer4 p = case (peerAddr p) of
       SockAddrInet port addr -> do
-        put addr
+        -- HostAddress is stored in network byte order
+        -- write it out in host endian order.
+        putWord32host addr
         put port
       _ -> return ()
 
