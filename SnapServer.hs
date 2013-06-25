@@ -134,6 +134,7 @@ urlBytes name val =
       Right (rem, count, result) -> do
         failWhen (name <> (B8.pack "incorrect length")) (count /= 20 || not (BL.null rem))
         return result
+    _ -> left (misformatted name)
 
 parseDec :: (Integral a) => B.ByteString -> B.ByteString -> ContEitherT m B.ByteString a
 parseDec name val = maybeParse name val decimal
