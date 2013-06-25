@@ -39,7 +39,6 @@ cycleKeys = do
   newK <- liftIO newShorthashKey
   (liftIO . (flip putMVar newK) =<< asks currKey)
   (liftIO . (flip putMVar currK) =<< asks prevKey)
-  liftIO $ putStrLn "Keys Cycled."
 
 type UdpT a = ReaderT UdpEnv IO a
 
@@ -222,7 +221,6 @@ handleUdpRequest sock addr msg = do
           whenParses rh announceGetter msg' $ \an -> do
             -- We don't trust you. Rewrite the supplied address, unless
             -- you're coming from rfc1918
-            liftIO $ putStrLn ("Possibly replacing: " ++ (show (peerAddr . anPeer $ an)) ++ " with " ++ (show addr))
             let an' = case addr of
                   SockAddrInet6 _ _ addr6 _ -> updateAddr6 addr6 an
                   SockAddrInet port addr4 -> case
@@ -232,13 +230,11 @@ handleUdpRequest sock addr msg = do
                         _ -> an
                       False -> updateAddr4 addr4 an
             anResp <- liftAnnounceT $ handleAnnounce an'
-            liftIO $ putStrLn ("Responding with: " ++ (show anResp))
             writeResponse $ (put (makeResponseHeader rh) >> announcePack anResp)
         2 -> whenValid addr rh $
           case (BL.length msg') `divMod` 20 of
             (n, 0) -> whenParses rh (replicateM (fromIntegral n) get) msg' $ \sreqs -> do
               sresps <- liftAnnounceT $ handleScrape sreqs
-              liftIO $ putStrLn ("Responding with: " ++ (show sresps))
               writeResponse (put (makeResponseHeader rh) >> mapM_ put sresps)
             _      -> do
                 let p = (put (makeErrorHeader rh) >>

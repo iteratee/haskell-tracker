@@ -165,8 +165,6 @@ updateActivity st hash peer = do
           putMVar queueM $
             S.insert (now, Just pid) $
             S.delete (old_now, Just pid) queue
-          readMVar lastSeenM >>= (\lastSeen -> 
-          readMVar queueM >>= (\queue -> 
 
 getHashRecord :: AnnounceState -> InfoHash -> IO HashRecord
 getHashRecord st hash = do
