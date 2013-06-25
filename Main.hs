@@ -50,13 +50,12 @@ pruneInactiveThread anEnv = forever $ do
 snapServerThread :: AnnounceEnv -> IO ()
 snapServerThread env = do
   putStrLn "Starting snap server."
-  let baseConfig = setVerbose True $ setPort 6666 mempty
-      config4 = setBind (B8.pack "0.0.0.0") baseConfig
-      config6 = setBind (B8.pack "::") $ setPort 6667 baseConfig
-  forkIO $ 
-    httpServe config4 (completeSnap env)
-  httpServe config6 (completeSnap env)
-    
+  let baseConfig = setVerbose True mempty
+  forM_ (ancAddrs $ anConf env) $ \(addr, port) -> do
+    let config = setAccessLog (ConfigFileLog ("log/access" ++ addr ++ ".log")) $
+          setErrorLog (ConfigFileLog ("log/error." ++ addr ++ ".log")) $
+          setBind (B8.pack addr) $ setPort (read port) baseConfig
+    forkIO $ httpServe config (completeSnap env)
 
 main = do
   anSt <- emptyAnnounceState

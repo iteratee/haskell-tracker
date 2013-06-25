@@ -51,7 +51,7 @@ defaultConfig = AnnounceConfig {
   , ancMaxPeers = 50
   , ancDefaultPeers = 30
   , ancIdlePeerTimeout = 360 -- Six minutes, three announce intervals
-  , ancAddrs = [("0.0.0.0", "6666"), ("::", "6667")]
+  , ancAddrs = [("0.0.0.0", "6969"), ("::", "6970")]
 }
 
 data AnnounceEnv = AnnounceEnv {
