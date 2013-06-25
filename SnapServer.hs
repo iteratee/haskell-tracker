@@ -106,8 +106,32 @@ announceAction env = do
           SockAddrInet _ _ -> bencodeResponse4
           SockAddrInet6 _ _ _ _ -> bencodeResponse6
 
+scrapeAction :: AnnounceEnv -> Snap ()
+scrapeAction env = do
+  mHashes <- getsRequest (rqQueryParam (B8.pack "info_hash"))
+  case mHashes of
+    Nothing -> do
+      writeBS (B8.pack "hashes required.")
+      getResponse >>= finishWith
+    Just rawvals -> do
+      let kvals = mapM parse rawvals
+          parse = (urlBytes (B8.pack "info_hash"))
+      runContEitherT kvals failure success
+  where
+    success hashes = do
+      resps <- liftIO $ runReaderT (handleScrape hashes) env
+      writeLBS $ toLazyByteString $ bencodeScrapes $ zip hashes resps
+      getResponse >>= finishWith
+    failure message = do
+      writeBS message
+      getResponse >>= finishWith
+      
+  
+
 completeSnap :: AnnounceEnv -> Snap ()
-completeSnap env = path (B8.pack "announce") $ method GET $ announceAction env
+completeSnap env = 
+  (path (B8.pack "announce") $ method GET $ announceAction env) <|>
+  (path (B8.pack "scrape") $ method GET $ scrapeAction env)
 
 failWhen :: b -> Bool -> ContEitherT m b ()
 fallWhen b True  = left b

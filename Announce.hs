@@ -4,6 +4,7 @@ import Bencode
 import Control.Monad
 import Data.Binary
 import Data.Binary.Builder
+import Data.Binary.Put (runPut)
 import Data.Bits
 import Data.Digest.SHA1
 import Data.Monoid
@@ -109,6 +110,20 @@ bencodePeer6 p bldr =
     SockAddrInet6 (PortNum p) _ (h0,h1,h2,h3) _ ->
       putWord32be h0 <> putWord32be h1 <> putWord32be h2 <> putWord32be h3 <> putWord16be p <> bldr
     _ -> bldr
+
+bencodeScrape :: (BencodeC b) => ScrapeResponse -> b
+bencodeScrape sr =
+  beDict $ beDictAlgCons (B8.pack "complete") (beInt (fromIntegral $ srSeeders sr)) $
+           beDictAlgCons (B8.pack "downloaded") (beInt (fromIntegral $ srCompletions sr)) $
+           beDictAlgCons (B8.pack "incomplete") (beInt (fromIntegral $ srLeechers sr)) $ 
+           beDictAlgNil
+
+bencodeScrapes :: (BencodeC b) => [(InfoHash, ScrapeResponse)] -> b
+bencodeScrapes srs =
+  beDict $ beDictAlgCons (B8.pack "files") innerDict $ beDictAlgNil
+  where
+    innerDict = beDict $ foldr (uncurry beDictAlgCons) beDictAlgNil $ map packHash srs
+    packHash (h,x) = (BL.toStrict . runPut . put $ h, bencodeScrape x)
 
 isRfc1918 :: Word32 -> Bool
 isRfc1918 addr =
