@@ -81,16 +81,16 @@ data AnnounceResponse =
 
 bencodeResponse4 :: (BencodeC b) => AnnounceResponse -> b
 bencodeResponse4 (Failure msg) =
-  beDict $ beDictAlgCons (B8.pack "failure") (beString msg) $ beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "failure") (beString msg) $ beDictCataNil
 bencodeResponse4 (PeerList ival _ _ peers) =
-  beDict $ beDictAlgCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictAlgCons (B8.pack "peers") (bencodePeers4 peers) $ beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "interval") (beInt $ fromIntegral ival) $
+    beDictCataCons (B8.pack "peers") (bencodePeers4 peers) $ beDictCataNil
 bencodeResponse6 :: (BencodeC b) => AnnounceResponse -> b
 bencodeResponse6 (Failure msg) =
-  beDict $ beDictAlgCons (B8.pack "failure") (beString msg) $ beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "failure") (beString msg) $ beDictCataNil
 bencodeResponse6 (PeerList ival _ _ peers) =
-  beDict $ beDictAlgCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictAlgCons (B8.pack "peers6") (bencodePeers6 peers) $ beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "interval") (beInt $ fromIntegral ival) $
+    beDictCataCons (B8.pack "peers6") (bencodePeers6 peers) $ beDictCataNil
 
 bencodePeers4 :: (BencodeC b) => [Peer] -> b
 bencodePeers4 peers = beString . BL.toStrict . toLazyByteString $
@@ -115,16 +115,16 @@ bencodePeer6 p bldr =
 
 bencodeScrape :: (BencodeC b) => ScrapeResponse -> b
 bencodeScrape sr =
-  beDict $ beDictAlgCons (B8.pack "complete") (beInt (fromIntegral $ srSeeders sr)) $
-           beDictAlgCons (B8.pack "downloaded") (beInt (fromIntegral $ srCompletions sr)) $
-           beDictAlgCons (B8.pack "incomplete") (beInt (fromIntegral $ srLeechers sr)) $ 
-           beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "complete") (beInt (fromIntegral $ srSeeders sr)) $
+           beDictCataCons (B8.pack "downloaded") (beInt (fromIntegral $ srCompletions sr)) $
+           beDictCataCons (B8.pack "incomplete") (beInt (fromIntegral $ srLeechers sr)) $ 
+           beDictCataNil
 
 bencodeScrapes :: (BencodeC b) => [(InfoHash, ScrapeResponse)] -> b
 bencodeScrapes srs =
-  beDict $ beDictAlgCons (B8.pack "files") innerDict $ beDictAlgNil
+  beDict $ beDictCataCons (B8.pack "files") innerDict $ beDictCataNil
   where
-    innerDict = beDict $ foldr (uncurry beDictAlgCons) beDictAlgNil $ map packHash srs
+    innerDict = beDict $ foldr (uncurry beDictCataCons) beDictCataNil $ map packHash srs
     packHash (h,x) = (BL.toStrict . runPut . put $ h, bencodeScrape x)
 
 isRfc1918 :: Word32 -> Bool

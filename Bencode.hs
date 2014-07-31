@@ -23,10 +23,10 @@ class BencodeC a where
   data Mi :: * -> * -- MapIntermediate
   beString :: B.ByteString -> a
   beInt :: Int64 -> a
-  beListAlgNil :: Li a
-  beListAlgCons :: (a -> Li a -> Li a)
-  beDictAlgNil :: Mi a
-  beDictAlgCons :: (B.ByteString -> a -> Mi a -> Mi a)
+  beListCataNil :: Li a
+  beListCataCons :: (a -> Li a -> Li a)
+  beDictCataNil :: Mi a
+  beDictCataCons :: (B.ByteString -> a -> Mi a -> Mi a)
   beList :: Li a -> a
   beDict :: Mi a -> a
 
@@ -35,10 +35,10 @@ instance BencodeC Bencode where
   data Mi Bencode = BeDictRaw [(B.ByteString, Bencode)]
   beString = BeString
   beInt = BeInt
-  beListAlgNil = BeListRaw []
-  beListAlgCons x (BeListRaw xs) = BeListRaw (x:xs)
-  beDictAlgNil = BeDictRaw []
-  beDictAlgCons k v (BeDictRaw kvs) = BeDictRaw ((k,v):kvs)
+  beListCataNil = BeListRaw []
+  beListCataCons x (BeListRaw xs) = BeListRaw (x:xs)
+  beDictCataNil = BeDictRaw []
+  beDictCataCons k v (BeDictRaw kvs) = BeDictRaw ((k,v):kvs)
   beList (BeListRaw l) = BeList l
   beDict (BeDictRaw kvs) = BeDict . M.fromList $ kvs
 
@@ -47,10 +47,10 @@ instance BencodeC Builder where
   data Mi Builder = BuilderMi Builder
   beString = serialize . BeString
   beInt = serialize . BeInt
-  beListAlgNil = BuilderLi mempty
-  beListAlgCons h (BuilderLi t) = BuilderLi (h <> t)
-  beDictAlgNil = BuilderMi mempty
-  beDictAlgCons k v (BuilderMi bldr) = BuilderMi $
+  beListCataNil = BuilderLi mempty
+  beListCataCons h (BuilderLi t) = BuilderLi (h <> t)
+  beDictCataNil = BuilderMi mempty
+  beDictCataCons k v (BuilderMi bldr) = BuilderMi $
     (serialize . BeString) k <> v <> bldr
   beList (BuilderLi b) = char8 'l' <> b <> char8 'e'
   beDict (BuilderMi b) = char8 'd' <> b <> char8 'e'
@@ -85,11 +85,11 @@ foldAltKey cons nil k v = many_kv
 deserialize :: (BencodeC a) => AP.Parser a
 deserialize =
   (beInt <$> (AP.char 'i' *> AP.decimal <* AP.char 'e')) <|>
-  (beList <$> (AP.char 'l' *> listAlg <* AP.char 'e')) <|>
-  (beDict <$> (AP.char 'd' *> dictAlg <* AP.char 'e')) <|>
+  (beList <$> (AP.char 'l' *> listCata <* AP.char 'e')) <|>
+  (beDict <$> (AP.char 'd' *> dictCata <* AP.char 'e')) <|>
   (beString <$> parseString)
   where
-    listAlg = foldAlt beListAlgCons beListAlgNil deserialize
-    dictAlg = foldAltKey beDictAlgCons beDictAlgNil parseString deserialize
+    listCata = foldAlt beListCataCons beListCataNil deserialize
+    dictCata = foldAltKey beDictCataCons beDictCataNil parseString deserialize
     parseString = (AP.decimal <* AP.char ':') >>= AP.take
     -- pair = (,) <$> bestring <*> deserialize
