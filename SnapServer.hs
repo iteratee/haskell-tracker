@@ -44,8 +44,11 @@ instance Monad (ContEitherT m l) where
   (ContEitherT kka) >>= f = ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
 
 type ContEither = ContEitherT Identity
+runContEither :: ContEither l r -> (l -> z) -> (r -> z) -> z
+runContEither ma lk rk = runIdentity $ runContEitherT ma (Identity . lk) (Identity . rk)
+
 toEither :: ContEither l r -> Either l r
-toEither ma = runIdentity $ runContEitherT ma (Identity . Left) (Identity . Right)
+toEither ma = runContEither ma Left Right
 
 eCatch :: ContEitherT m l r -> (l -> ContEitherT m l r) -> ContEitherT m l r
 eCatch ka handler = ContEitherT $ \lk rk -> runContEitherT ka (\l -> runContEitherT (handler l) lk rk) rk
@@ -119,14 +122,23 @@ scrapeAction env = do
       runContEitherT kvals failure success
   where
     success hashes = do
-      resps <- liftIO $ runReaderT (handleScrape hashes) env
+      kipVersion <- getsRequest rqGetIpVersion
+      let ipVersion = runContEither kipVersion (const Ipv4) id
+      resps <- liftIO $ runReaderT (handleScrape ipVersion hashes) env
       writeLBS $ toLazyByteString $ bencodeScrapes $ zip hashes resps
       getResponse >>= finishWith
     failure message = do
       writeBS message
       getResponse >>= finishWith
+
+rqGetIpVersion :: Request -> ContEitherT m B.ByteString IpVersion
+rqGetIpVersion req = do
+  let port = (PortNum . fromIntegral . rqRemotePort) req
+  reqAddr <- parseSockAddr port (B8.empty) (rqRemoteAddr req)
+  case reqAddr of
+    SockAddrInet _ _ -> return Ipv4
+    SockAddrInet6 _ _ _ _ -> return Ipv6
       
-  
 
 completeSnap :: AnnounceEnv -> Snap ()
 completeSnap env = 

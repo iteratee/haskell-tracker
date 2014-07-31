@@ -244,16 +244,20 @@ addOrRemovePeer an = do
             True -> (mod, return, id)
             False -> (return, mod, id)
 
-handleScrape :: [ScrapeRequest] -> AnnounceT [ScrapeResponse]
-handleScrape hashes = do
+data IpVersion = Ipv4 | Ipv6
+
+handleScrape :: IpVersion -> [ScrapeRequest] -> AnnounceT [ScrapeResponse]
+handleScrape ipVersion hashes = do
   hashRecords <- liftIO . readMVar =<< asks (activeHashes . anSt)
   forM hashes $ \hash -> liftIO $
     case M.lookup hash hashRecords of
       Nothing -> return emptyScrapeResponse
       Just hr -> do
-        (seeders4, leechers4, completed4) <- getPeerCounts (hrInet4 hr)
-        (seeders6, leechers6, completed6) <- getPeerCounts (hrInet6 hr)
+        let mphr = case ipVersion of
+              Ipv4 -> hrInet4 hr
+              Ipv6 -> hrInet6 hr
+        (seeders, leechers, completed) <- getPeerCounts mphr
         return ScrapeResponse {
-            srSeeders = (seeders4 + seeders6)
-          , srLeechers = (leechers4 + leechers6)
-          , srCompletions = (completed4 + completed6) }
+            srSeeders = seeders
+          , srLeechers = leechers
+          , srCompletions = completed }

@@ -89,11 +89,13 @@ instance Binary PortNumber where
   put (PortNum pn) = put pn
 
 instance Binary ScrapeResponse where
-  get = liftM3 ScrapeResponse get get get
+  get = do
+    l <- get
+    s <- get
+    return ScrapeResponse { srSeeders = s, srCompletions = 0, srLeechers = l }
   put sr = do
-    put $ srSeeders sr
-    put $ srCompletions sr
     put $ srLeechers sr
+    put $ srSeeders sr
 
 connectionHashString :: SockAddr -> B.ByteString
 connectionHashString sock = BL.toStrict $
@@ -198,8 +200,8 @@ packAnnounceResponseGen packPeers ar = do
     PeerList { plInterval = ival, plSeeders = ns
              , plLeechers = nl, plPeers = peers } -> do
       put ival
-      put (fromMaybe 0 ns)
       put (fromMaybe 0 nl)
+      put (fromMaybe 0 ns)
       packPeers peers
 
 handleUdpRequest :: Socket -> SockAddr -> B.ByteString -> UdpT ()
@@ -208,9 +210,9 @@ handleUdpRequest sock addr msg = do
   case runGetOrFail get (BL.fromStrict msg) of
     Left _ -> return () -- Unparseable requests just get dropped
     Right (msg', _, rh) -> do
-      let (announceAction, announceGetter, announcePack) = case addr of
-            SockAddrInet _ _ -> (1, getUdpAnnounce4, packAnnounceResponse4)
-            SockAddrInet6 _ _ _ _ -> (4, getUdpAnnounce6, packAnnounceResponse6)
+      let (announceAction, announceGetter, announcePack, ipVersion) = case addr of
+            SockAddrInet _ _ -> (1, getUdpAnnounce4, packAnnounceResponse4, Ipv4)
+            SockAddrInet6 _ _ _ _ -> (4, getUdpAnnounce6, packAnnounceResponse6, Ipv6)
       case (reqAction rh) of
         0 -> do
           mresp <- handleConnect addr rh
@@ -236,7 +238,7 @@ handleUdpRequest sock addr msg = do
         2 -> whenValid addr rh $
           case (BL.length msg') `divMod` 20 of
             (n, 0) -> whenParses rh (replicateM (fromIntegral n) get) msg' $ \sreqs -> do
-              sresps <- liftAnnounceT $ handleScrape sreqs
+              sresps <- liftAnnounceT $ handleScrape ipVersion sreqs
               writeResponse (put (makeResponseHeader rh) >> mapM_ put sresps)
             _      -> do
                 let p = (put (makeErrorHeader rh) >>
