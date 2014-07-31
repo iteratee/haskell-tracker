@@ -43,7 +43,6 @@ udpServerThread anEnv = do
 
 pruneInactiveThread :: AnnounceEnv -> IO ()
 pruneInactiveThread anEnv = forever $ do
-  putStrLn "Starting inactive pruner."
   threadDelay oneMinuteMicros
   runReaderT pruneQueue anEnv
 
