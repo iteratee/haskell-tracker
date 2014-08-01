@@ -1,17 +1,17 @@
 module Main where
 
-import Announce
-import AnnounceServer
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Trans.Reader
 import Data.Monoid
+import Network.BitTorrent.Tracker.Announce
+import Network.BitTorrent.Tracker.AnnounceServer
+import Network.BitTorrent.Tracker.SnapServer
+import Network.BitTorrent.Tracker.UdpProtocol
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
-import SnapServer
-import Snap.Http.Server.Config hiding (defaultConfig)
 import Snap.Http.Server hiding (defaultConfig)
-import UdpProtocol
+import Snap.Http.Server.Config hiding (defaultConfig)
 import qualified Data.ByteString.Char8 as B8
 
 oneMinuteMicros :: Int

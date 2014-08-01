@@ -1,8 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
-module SnapServer where
+module Network.BitTorrent.Tracker.SnapServer where
 
-import Announce
-import AnnounceServer
 import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
@@ -18,6 +16,8 @@ import Data.Maybe
 import Data.Monoid
 import Data.Word
 import Debug.Trace
+import Network.BitTorrent.Tracker.Announce
+import Network.BitTorrent.Tracker.AnnounceServer
 import Network.Socket
 import Snap.Core
 import System.Endian

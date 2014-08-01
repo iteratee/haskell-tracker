@@ -1,12 +1,12 @@
-module PeerFinder where
+module Network.BitTorrent.Tracker.PeerFinder where
 
-import Announce
 import Control.Concurrent.MVar
 import Control.Monad.Random
 import Data.Digest.SHA1
 import Data.List
 import Data.Tuple
 import Data.Word
+import Network.BitTorrent.Tracker.Announce
 import qualified Data.Map as M
 
 -- A PeerList is a pair of maps (current and next) from (r, Maybe peerId) to a

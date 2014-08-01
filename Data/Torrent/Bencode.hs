@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
-module Bencode where
+module Data.Torrent.Bencode where
 
 import Control.Applicative
 import Data.ByteString.Lazy.Builder

@@ -1,11 +1,11 @@
 module Main where
 
-import Announce
 import Control.Monad
 import Control.Monad.Random
 import Data.Digest.SHA1
 import Data.List (nub)
-import PeerFinder
+import Network.BitTorrent.Tracker.Announce
+import Network.BitTorrent.Tracker.PeerFinder
 import Network.Socket
 import Test.Framework (defaultMain, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)

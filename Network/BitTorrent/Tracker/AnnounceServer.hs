@@ -1,6 +1,5 @@
 {-# LANGUAGE TupleSections #-}
-module AnnounceServer where
-import Announce
+module Network.BitTorrent.Tracker.AnnounceServer where
 import Control.Concurrent.MVar
 import Control.Monad hiding (forM, mapM)
 import Control.Monad.IO.Class
@@ -11,8 +10,9 @@ import Data.Maybe
 import Data.Time.Clock
 import Data.Traversable
 import Data.Word
+import Network.BitTorrent.Tracker.Announce
+import Network.BitTorrent.Tracker.PeerFinder
 import Network.Socket
-import PeerFinder
 import qualified Data.ByteString as B
 import qualified Data.Map as M
 import qualified Data.Set as S

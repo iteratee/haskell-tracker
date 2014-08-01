@@ -1,6 +1,5 @@
-module Announce where
+module Network.BitTorrent.Tracker.Announce where
 
-import Bencode
 import Control.Monad
 import Data.Binary
 import Data.Binary.Builder
@@ -8,6 +7,7 @@ import Data.Binary.Put (runPut)
 import Data.Bits
 import Data.Digest.SHA1
 import Data.Monoid
+import Data.Torrent.Bencode
 import Data.Word
 import Network.Socket
 import Test.QuickCheck.Arbitrary

@@ -1,7 +1,5 @@
-module UdpProtocol where
+module Network.BitTorrent.Tracker.UdpProtocol where
 
-import Announce
-import AnnounceServer
 import Control.Concurrent.MVar
 import Control.Monad
 import Control.Monad.IO.Class
@@ -14,6 +12,8 @@ import Data.Bits
 import Data.Digest.SHA1
 import Data.Maybe
 import Data.Word
+import Network.BitTorrent.Tracker.Announce
+import Network.BitTorrent.Tracker.AnnounceServer
 import Network.Socket
 import Network.Socket.ByteString
 import qualified Data.ByteString as B
