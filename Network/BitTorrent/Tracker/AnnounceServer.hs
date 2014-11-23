@@ -69,7 +69,7 @@ getConf = asks anConf
 
 pruneQueue :: AnnounceT ()
 pruneQueue = do
-  now <- liftIO $ getCurrentTime
+  now <- liftIO getCurrentTime
   st <- getState
   hrMap <- liftIO $ takeMVar (activeHashes st)
   lastSeen <- liftIO $ takeMVar (peersLastSeen st)
@@ -114,15 +114,13 @@ handleAnnounce an = do
   hr <- liftIO $ getHashRecord st hash
   liftIO $ updateActivity st hash peer
   let phr = getProtocolHashRecord peer hr
-      peerGetter =
-        if (anEvent an) == Just Completed
-          then \count phr -> return []
-          else if (isSeeder an)
-            then getLeechers
-            else getPeers
+      peerGetter 
+        | anEvent an == Just Completed = \count phr -> return []
+        | isSeeder an                  = getLeechers
+        | otherwise                    = getPeers
   maxPeers <- liftM ancMaxPeers getConf
   defPeers <- liftM ancDefaultPeers getConf
-  let peersWanted = case (anEvent an) of
+  let peersWanted = case anEvent an of
         Just Completed -> 0
         _ -> fromMaybe defPeers (anWant an)
       peerCount = min maxPeers peersWanted
@@ -130,7 +128,7 @@ handleAnnounce an = do
   interval <- liftM ancInterval getConf
   addOrRemovePeer an
   (nSeeders, nLeechers, _) <- liftIO $ getPeerCounts phr
-  return PeerList { plInterval = (fromIntegral interval)
+  return PeerList { plInterval = fromIntegral interval
                   , plSeeders = Just nSeeders
                   , plLeechers = Just nLeechers, plPeers = peers }
 
@@ -152,7 +150,7 @@ updateActivity st hash peer = do
       updateHashActivity peer lastSeen activityQueue
   where
     updateHashActivity peer lastSeenM queueM = do
-      let pid = (peerId peer)
+      let pid = peerId peer
       now <- getCurrentTime
       lastSeen <- takeMVar lastSeenM
       queue <- takeMVar queueM
@@ -179,15 +177,15 @@ getHashRecord st hash = do
       return hr
 
 getProtocolHashRecord :: Peer -> HashRecord -> MVar ProtocolHashRecord
-getProtocolHashRecord peer hr = do
+getProtocolHashRecord peer hr =
   case peerAddr peer of
-    SockAddrInet _ _ -> hrInet4 hr
-    SockAddrInet6 _ _ _ _ -> hrInet6 hr
+    SockAddrInet{} -> hrInet4 hr
+    SockAddrInet6{} -> hrInet6 hr
     _ -> error "Unix sockets not supported."
       -- TODO: Make this a reasonable exception
 
 isSeeder :: Announce -> Bool
-isSeeder an = (anLeft an) == 0
+isSeeder an = anLeft an == 0
 
 data PeerAction = Add | Shift | Remove
 
@@ -196,7 +194,7 @@ addOrRemovePeer an = do
   let peer = anPeer an
       hash = anInfoHash an
   st <- getState
-  case (anEvent an) of
+  case anEvent an of
     -- On a non-event add them just in case
     Nothing -> addAnnounce st an
     Just Started -> addAnnounce st an
@@ -239,10 +237,9 @@ addOrRemovePeer an = do
                         -> (RandomPeerList -> IO RandomPeerList,
                             RandomPeerList -> IO RandomPeerList,
                             Word32 -> Word32)
-        makeUpdaters mod an =
-          case isSeeder an of
-            True -> (mod, return, id)
-            False -> (return, mod, id)
+        makeUpdaters mod an = if isSeeder an
+          then (mod, return, id)
+          else (return, mod, id)
 
 data IpVersion = Ipv4 | Ipv6
 

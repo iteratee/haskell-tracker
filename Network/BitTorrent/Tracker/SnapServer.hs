@@ -26,7 +26,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.Map as M
 
-newtype ContEitherT m l r = ContEitherT { runContEitherT :: (forall z. (l -> m z) -> (r -> m z) -> m z) }
+newtype ContEitherT m l r = ContEitherT { runContEitherT :: forall z. (l -> m z) -> (r -> m z) -> m z }
 left :: l -> ContEitherT m l r
 left l = ContEitherT $ \lk rk -> lk l
 right :: r -> ContEitherT m l r
@@ -63,22 +63,22 @@ rqAnnounce req = do
   downloaded <- grabAndParseParam (B8.pack "downloaded") params parseDec
   left <- grabAndParseParam (B8.pack "left") params parseDec
   addr <- optionalParseParam (B8.pack "ip") params (parseSockAddr port)
-  reqAddr <- parseSockAddr port (B8.empty) (rqRemoteAddr req)
+  reqAddr <- parseSockAddr port B8.empty (rqRemoteAddr req)
   compact <- optionalParseParam (B8.pack "compact") params parseDec
     :: ContEitherT m B.ByteString (Maybe Word8)
   failWhen (B8.pack "Compact not supported.")
-    (compact /= Nothing && compact /= Just 1)
+    (isJust compact && compact /= Just 1)
   event <- optionalParseParam (B8.pack "event") params parseEvent
   want <- optionalParseParam (B8.pack "numwant") params parseDec
   let realAddr = case reqAddr of
-        SockAddrInet6 _ _ _ _ -> reqAddr
+        SockAddrInet6{} -> reqAddr
         SockAddrInet _ addr4 ->
-          case isRfc1918 addr4 of
-            False -> reqAddr
-            True -> case addr of
-              Nothing -> reqAddr
-              Just (SockAddrInet6 _ _ _ _) -> reqAddr
-              Just a@(SockAddrInet _ _) -> a
+            if isRfc1918 addr4
+                then case addr of
+                    Nothing -> reqAddr
+                    Just SockAddrInet6{} -> reqAddr
+                    Just a@(SockAddrInet{}) -> a
+                else reqAddr
   return Announce {
     anInfoHash = hash,
     anPeer = Peer {
@@ -105,9 +105,9 @@ announceAction env = do
       writeLBS $ toLazyByteString $ encoder resp
       getResponse >>= finishWith
       where
-        encoder = case (peerAddr $ anPeer announce) of
-          SockAddrInet _ _ -> bencodeResponse4
-          SockAddrInet6 _ _ _ _ -> bencodeResponse6
+        encoder = case peerAddr $ anPeer announce of
+          SockAddrInet{} -> bencodeResponse4
+          SockAddrInet6{} -> bencodeResponse6
 
 scrapeAction :: AnnounceEnv -> Snap ()
 scrapeAction env = do
@@ -118,7 +118,7 @@ scrapeAction env = do
       getResponse >>= finishWith
     Just rawvals -> do
       let kvals = mapM parse rawvals
-          parse = (urlBytes (B8.pack "info_hash"))
+          parse = urlBytes (B8.pack "info_hash")
       runContEitherT kvals failure success
   where
     success hashes = do
@@ -134,33 +134,32 @@ scrapeAction env = do
 rqGetIpVersion :: Request -> ContEitherT m B.ByteString IpVersion
 rqGetIpVersion req = do
   let port = (PortNum . fromIntegral . rqRemotePort) req
-  reqAddr <- parseSockAddr port (B8.empty) (rqRemoteAddr req)
+  reqAddr <- parseSockAddr port B8.empty (rqRemoteAddr req)
   case reqAddr of
-    SockAddrInet _ _ -> return Ipv4
-    SockAddrInet6 _ _ _ _ -> return Ipv6
-      
+    SockAddrInet{} -> return Ipv4
+    SockAddrInet6{} -> return Ipv6
 
 completeSnap :: AnnounceEnv -> Snap ()
 completeSnap env = 
-  (path (B8.pack "announce") $ method GET $ announceAction env) <|>
-  (path (B8.pack "scrape") $ method GET $ scrapeAction env)
+  path (B8.pack "announce") (method GET $ announceAction env) <|>
+  path (B8.pack "scrape") (method GET $ scrapeAction env)
 
 failWhen :: b -> Bool -> ContEitherT m b ()
 fallWhen b True  = left b
 failWhen _ False = right ()
 
 missing :: B.ByteString -> B.ByteString
-missing key = key <> (B8.pack " missing.")
+missing key = key <> B8.pack " missing."
 
 tooMany :: B.ByteString -> B.ByteString
-tooMany key = key <> (B8.pack " too many times.")
+tooMany key = key <> B8.pack " too many times."
 
 misformatted :: B.ByteString -> B.ByteString
-misformatted key = key <> (B8.pack " not formatted correctly.")
+misformatted key = key <> B8.pack " not formatted correctly."
 
 maybeParse :: B.ByteString -> B.ByteString -> Parser a -> ContEitherT m B.ByteString a
-maybeParse name val parser = 
-  parseOnlyMessage (misformatted name) val parser
+maybeParse name = 
+  parseOnlyMessage (misformatted name)
 
 urlBytes :: B.ByteString -> B.ByteString -> ContEitherT m B.ByteString Word160
 urlBytes name val =
@@ -168,7 +167,7 @@ urlBytes name val =
     20 -> case runGetOrFail get (BL.fromStrict val) of
       Left _ -> left (misformatted name) -- Shouldn't happen
       Right (rem, count, result) -> do
-        failWhen (name <> (B8.pack "incorrect length")) (count /= 20 || not (BL.null rem))
+        failWhen (name <> B8.pack "incorrect length") (count /= 20 || not (BL.null rem))
         return result
     _ -> left (misformatted name)
 
@@ -197,10 +196,10 @@ parseIp4 = fromBE32 <$> (packBytes <$> decimal <* char '.'
                                    <*> decimal)
   where
     packBytes :: Word8 -> Word8 -> Word8 -> Word8 -> Word32
-    packBytes b1 b2 b3 b4 = (fi b1) `shiftL` 24 .|.
-                            (fi b2) `shiftL` 16 .|.
-                            (fi b3) `shiftL` 8 .|.
-                            (fi b4)
+    packBytes b1 b2 b3 b4 = fi b1 `shiftL` 24 .|.
+                            fi b2 `shiftL` 16 .|.
+                            fi b3 `shiftL` 8 .|.
+                            fi b4
 
 parseIp6 :: Parser HostAddress6
 parseIp6 = complete6 <|> seperated6
@@ -215,13 +214,13 @@ parseIp6 = complete6 <|> seperated6
                     Word16 -> Word16 -> Word16 -> Word16 ->
                     HostAddress6
     packComplete a b c d e f g h = (
-      (fi a) `shiftL` 16 .|. (fi b), (fi c) `shiftL` 16 .|. (fi d),
-      (fi e) `shiftL` 16 .|. (fi f), (fi g) `shiftL` 16 .|. (fi h))
+      fi a `shiftL` 16 .|. fi b, fi c `shiftL` 16 .|. fi d,
+      fi e `shiftL` 16 .|. fi f, fi g `shiftL` 16 .|. fi h)
     seperated6 = sepByUpto 7 hex colon >>= \pre ->
-      packSeparated pre <$ doubleColon <*> sepByUpto (7 - (length pre)) hex colon
+      packSeparated pre <$ doubleColon <*> sepByUpto (7 - length pre) hex colon
     packSeparated :: [Word16] -> [Word16] -> HostAddress6
     packSeparated first last = packSeparated' (first ++ replicate rem 0 ++ last)
-      where rem = (8 - length first - length last)
+      where rem = 8 - length first - length last
     packSeparated' (a:b:c:d:e:f:g:h:[]) = packComplete a b c d e f g h
 
 parseEvent :: B.ByteString -> B.ByteString -> ContEitherT m B.ByteString Event
@@ -259,7 +258,7 @@ optionalParam :: B.ByteString
 optionalParam key map =
   case M.lookup key map of
     Nothing -> return Nothing
-    Just vals -> do
+    Just vals ->
       Just <$> singletonList (tooMany key) vals
 
 optionalParseParam :: B.ByteString
@@ -277,8 +276,7 @@ grabParam :: B.ByteString
           -> ContEitherT m B.ByteString B.ByteString
 grabParam key map = do
   vals <- withMessage (missing key) (M.lookup key map)
-  val <- singletonList (tooMany key) vals
-  return val
+  singletonList (tooMany key) vals
 
 grabAndParseParam :: B.ByteString
                   -> M.Map B.ByteString [B.ByteString]

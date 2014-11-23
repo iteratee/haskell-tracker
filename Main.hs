@@ -26,7 +26,7 @@ udpServerThread anEnv = do
     addrinfos <- getAddrInfo Nothing (Just addr) (Just port)
     let serveraddr = head addrinfos
     sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
-    when ((addrFamily serveraddr) == AF_INET6) $
+    when (addrFamily serveraddr == AF_INET6) $
       setSocketOption sock IPv6Only 1
     bindSocket sock (addrAddress serveraddr)
     forkIO $ acceptAndProcessRequests sock env
@@ -35,7 +35,7 @@ udpServerThread anEnv = do
     acceptAndProcessRequests :: Socket -> UdpEnv -> IO ()
     acceptAndProcessRequests sock env = forever $ do
       (msg, addr) <- recvFrom sock 1024
-      forkIO $ do
+      forkIO $
         runReaderT (handleUdpRequest sock addr msg) env
     cycleKeyThread env = forever $ do
       threadDelay (2 * oneMinuteMicros)

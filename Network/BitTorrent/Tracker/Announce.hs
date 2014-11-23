@@ -81,16 +81,16 @@ data AnnounceResponse =
 
 bencodeResponse4 :: (BencodeC b) => AnnounceResponse -> b
 bencodeResponse4 (Failure msg) =
-  beDict $ beDictCataCons (B8.pack "failure") (beString msg) $ beDictCataNil
+  beDict $ beDictCataCons (B8.pack "failure") (beString msg) beDictCataNil
 bencodeResponse4 (PeerList ival _ _ peers) =
   beDict $ beDictCataCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictCataCons (B8.pack "peers") (bencodePeers4 peers) $ beDictCataNil
+    beDictCataCons (B8.pack "peers") (bencodePeers4 peers) beDictCataNil
 bencodeResponse6 :: (BencodeC b) => AnnounceResponse -> b
 bencodeResponse6 (Failure msg) =
-  beDict $ beDictCataCons (B8.pack "failure") (beString msg) $ beDictCataNil
+  beDict $ beDictCataCons (B8.pack "failure") (beString msg) beDictCataNil
 bencodeResponse6 (PeerList ival _ _ peers) =
   beDict $ beDictCataCons (B8.pack "interval") (beInt $ fromIntegral ival) $
-    beDictCataCons (B8.pack "peers6") (bencodePeers6 peers) $ beDictCataNil
+    beDictCataCons (B8.pack "peers6") (bencodePeers6 peers) beDictCataNil
 
 bencodePeers4 :: (BencodeC b) => [Peer] -> b
 bencodePeers4 peers = beString . BL.toStrict . toLazyByteString $
@@ -101,14 +101,14 @@ bencodePeers6 peers = beString . BL.toStrict . toLazyByteString $
 
 bencodePeer4 :: Peer -> Builder -> Builder
 bencodePeer4 p bldr =
-  case (peerAddr p) of
+  case peerAddr p of
     -- HostAddress is stored in network byte order. So it needs to be written
     -- out as stored.
     SockAddrInet (PortNum p) h -> putWord32host h <> putWord16be p <> bldr
     _ -> bldr
 bencodePeer6 :: Peer -> Builder -> Builder
 bencodePeer6 p bldr =  
-  case (peerAddr p) of
+  case peerAddr p of
     SockAddrInet6 (PortNum p) _ (h0,h1,h2,h3) _ ->
       putWord32be h0 <> putWord32be h1 <> putWord32be h2 <> putWord32be h3 <> putWord16be p <> bldr
     _ -> bldr
@@ -117,14 +117,14 @@ bencodeScrape :: (BencodeC b) => ScrapeResponse -> b
 bencodeScrape sr =
   beDict $ beDictCataCons (B8.pack "complete") (beInt (fromIntegral $ srSeeders sr)) $
            beDictCataCons (B8.pack "downloaded") (beInt (fromIntegral $ srCompletions sr)) $
-           beDictCataCons (B8.pack "incomplete") (beInt (fromIntegral $ srLeechers sr)) $ 
-           beDictCataNil
+           beDictCataCons (B8.pack "incomplete") (beInt (fromIntegral $ srLeechers sr))
+             beDictCataNil
 
 bencodeScrapes :: (BencodeC b) => [(InfoHash, ScrapeResponse)] -> b
 bencodeScrapes srs =
-  beDict $ beDictCataCons (B8.pack "files") innerDict $ beDictCataNil
+  beDict $ beDictCataCons (B8.pack "files") innerDict beDictCataNil
   where
-    innerDict = beDict $ foldr (uncurry beDictCataCons) beDictCataNil $ map packHash srs
+    innerDict = beDict $ foldr (uncurry beDictCataCons . packHash) beDictCataNil srs
     packHash (h,x) = (BL.toStrict . runPut . put $ h, bencodeScrape x)
 
 isRfc1918 :: Word32 -> Bool

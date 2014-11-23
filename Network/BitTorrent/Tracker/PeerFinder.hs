@@ -27,18 +27,18 @@ getNPeers :: (MonadRandom m) => Int ->
                                 RandomPeerList ->
                                 m ([Peer], RandomPeerList)
 getNPeers count peerlist = do
-  let currMap = (rplCurrent peerlist)
-      nextMap = (rplNext peerlist)
-      reverseMap = (rplReverse peerlist)
-      got = M.size (currMap)
+  let currMap = rplCurrent peerlist
+      nextMap = rplNext peerlist
+      reverseMap = rplReverse peerlist
+      got = M.size currMap
       count' = count - got
   if got >= count
     then do
       let ((splitKey, _), _) = M.elemAt count currMap
           (left, right) =
-            if (got > count)
-              then M.split (splitKey, Nothing) currMap
-              else (currMap, M.empty)
+            if got > count
+            then M.split (splitKey, Nothing) currMap
+            else (currMap, M.empty)
           result = M.elems left
       newAssocs <- mapM (buildRandKey 0) result
       let newMap = foldl' (flip $ uncurry M.insert) nextMap newAssocs
@@ -48,25 +48,25 @@ getNPeers count peerlist = do
                            , rplNext = newMap
                            , rplReverse = newReverse }
       return (result, peerlist')
-    else do
+    else
       if M.size nextMap <= count'
-        then do
-          let currList = M.elems currMap
-              nextList = M.elems nextMap
-              result = currList ++ nextList
-          return (result, peerlist)
-        else do
-          let ((insertKey_, _), _) = M.elemAt (count' - 1) nextMap
-              insertKey = (min (maxBound - 1) insertKey_) + 1
-              initialResult = M.elems currMap
-          lastAssocs <- mapM (buildRandKey insertKey) initialResult
-          let fixedMap = foldl' (flip $ uncurry M.insert) nextMap lastAssocs
-              newReverse = updateReverseMap lastAssocs reverseMap
-          (tail, peerlist') <-
-              getNPeers count' RandomPeerList {  rplCurrent = fixedMap
-                                               , rplNext = M.empty
-                                               , rplReverse = newReverse }
-          return (initialResult ++ tail, peerlist')
+      then do
+        let currList = M.elems currMap
+            nextList = M.elems nextMap
+            result = currList ++ nextList
+        return (result, peerlist)
+      else do
+        let ((insertKey_, _), _) = M.elemAt (count' - 1) nextMap
+            insertKey = min (maxBound - 1) insertKey_ + 1
+            initialResult = M.elems currMap
+        lastAssocs <- mapM (buildRandKey insertKey) initialResult
+        let fixedMap = foldl' (flip $ uncurry M.insert) nextMap lastAssocs
+            newReverse = updateReverseMap lastAssocs reverseMap
+        (tail, peerlist') <-
+            getNPeers count' RandomPeerList {  rplCurrent = fixedMap
+                                             , rplNext = M.empty
+                                             , rplReverse = newReverse }
+        return (initialResult ++ tail, peerlist')
   where
     updateReverseMap :: [((Word32, Maybe PeerId), Peer)] -> ReversePeerMap -> ReversePeerMap
     updateReverseMap assocs reverseMap =
@@ -79,9 +79,9 @@ getNPeers count peerlist = do
 
 addPeer :: (MonadRandom m) => Peer -> RandomPeerList -> m RandomPeerList
 addPeer p rpl = do
-  let nextMap = (rplNext rpl)
-      reverseMap = (rplReverse rpl)
-      k = (Just (peerId p))
+  let nextMap = rplNext rpl
+      reverseMap = rplReverse rpl
+      k = Just (peerId p)
   case M.lookup k reverseMap of
     Nothing -> do
       r <- getRandom
@@ -90,20 +90,20 @@ addPeer p rpl = do
     Just _ -> return rpl
 
 hasPeer :: Peer -> RandomPeerList -> Bool
-hasPeer p rpl = hasPeerId (peerId p) rpl
+hasPeer p = hasPeerId (peerId p)
 
 hasPeerId :: PeerId -> RandomPeerList -> Bool
 hasPeerId pid rpl =
-  let reverseMap = (rplReverse rpl)
-      k = (Just pid)
+  let reverseMap = rplReverse rpl
+      k = Just pid
   in M.member k reverseMap
 
 removePeerId :: PeerId -> RandomPeerList -> RandomPeerList
 removePeerId pid rpl = do
-  let currMap = (rplCurrent rpl)
-      nextMap = (rplNext rpl)
-      reverseMap = (rplReverse rpl)
-      k = (Just pid)
+  let currMap = rplCurrent rpl
+      nextMap = rplNext rpl
+      reverseMap = rplReverse rpl
+      k = Just pid
   case M.lookup k reverseMap of
     Nothing -> rpl
     Just r ->
@@ -156,8 +156,8 @@ getPeers count mphr =
   in getPeersGen nSeeders nLeechers mphr
 
 getLeechers :: Int -> MVar ProtocolHashRecord -> IO [Peer]
-getLeechers count mphr =
-  getPeersGen 0 count mphr
+getLeechers =
+  getPeersGen 0
   
 getPeersGen :: Int -> Int -> MVar ProtocolHashRecord -> IO [Peer]
 getPeersGen nSeeders nLeechers mphr = do
@@ -165,20 +165,20 @@ getPeersGen nSeeders nLeechers mphr = do
   g2 <- newStdGen
   phr <- takeMVar mphr
   let count = nSeeders + nLeechers
-      seeders = (phrSeeders phr)
-      leechers = (phrLeechers phr)
+      seeders = phrSeeders phr
+      leechers = phrLeechers phr
       seedersAvail = peerSize seeders
       leechersAvail = peerSize leechers
       (nSeeders', nLeechers') =
-        if (seedersAvail + leechersAvail) <= count
-          then (seedersAvail, leechersAvail)
-          else
-            let seedersFloor = min seedersAvail nSeeders
-                leechersFloor = min leechersAvail nLeechers
-                seedersBackfill = count - leechersAvail
-                leechersBackfill = count - seedersAvail
-            in (max seedersFloor seedersBackfill,
-                max leechersFloor leechersBackfill)
+        if seedersAvail + leechersAvail <= count
+        then (seedersAvail, leechersAvail)
+        else
+          let seedersFloor = min seedersAvail nSeeders
+              leechersFloor = min leechersAvail nLeechers
+              seedersBackfill = count - leechersAvail
+              leechersBackfill = count - seedersAvail
+          in (max seedersFloor seedersBackfill,
+              max leechersFloor leechersBackfill)
   let (seederList, seeders') = evalRand (getNPeers nSeeders' seeders) g1
       (leecherList, leechers') = evalRand (getNPeers nLeechers' leechers) g2
   putMVar mphr $ phr {
@@ -188,8 +188,8 @@ getPeersGen nSeeders nLeechers mphr = do
 getPeerCounts :: MVar ProtocolHashRecord -> IO (Word32, Word32, Word32)
 getPeerCounts mphr = do
   phr <- readMVar mphr
-  let seeders = (phrSeeders phr)
-      leechers = (phrLeechers phr)
-      completed = (phrCompleteCount phr)
+  let seeders = phrSeeders phr
+      leechers = phrLeechers phr
+      completed = phrCompleteCount phr
   return (fromIntegral $ peerSize seeders,
           fromIntegral $ peerSize leechers, completed)

@@ -66,9 +66,9 @@ serialize (BeDict m) =
   char8 'd' <> serializeMap m <> char8 'e'
   where
     serializeMap :: M.Map B.ByteString Bencode -> Builder
-    serializeMap m =
+    serializeMap =
       M.foldrWithKey (\k v bldr ->
-        (serialize . BeString) k <> serialize v <> bldr) mempty m
+        (serialize . BeString) k <> serialize v <> bldr) mempty
 
 foldAlt :: (a -> b -> b) -> b -> AP.Parser a -> AP.Parser b
 foldAlt cons nil v = many_v
