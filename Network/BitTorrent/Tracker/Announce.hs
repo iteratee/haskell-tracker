@@ -1,4 +1,18 @@
-module Network.BitTorrent.Tracker.Announce where
+module Network.BitTorrent.Tracker.Announce 
+  ( Announce(..)
+  , AnnounceResponse(..)
+  , Event(..)
+  , InfoHash
+  , Peer(..)
+  , PeerId
+  , ScrapeRequest(..)
+  , ScrapeResponse(..)
+  , bencodeResponse4
+  , bencodeResponse6
+  , bencodeScrapes
+  , emptyScrapeResponse
+  , isRfc1918
+  ) where
 
 import Control.Monad
 import Data.Binary
