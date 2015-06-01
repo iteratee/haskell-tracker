@@ -11,6 +11,7 @@ import Data.Bits
 import Data.ByteString.Lazy.Builder
 import Data.Digest.SHA1
 import Data.Either
+import Data.Endian
 import Data.Functor.Identity
 import Data.Maybe
 import Data.Monoid
@@ -42,6 +43,16 @@ instance Functor (ContEitherT m l) where
 instance Monad (ContEitherT m l) where
   return = right
   (ContEitherT kka) >>= f = ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
+
+instance Applicative (ContEitherT m l) where
+  pure = right
+  (ContEitherT kkf) <*> (ContEitherT kka) =
+    ContEitherT $ \lk rk -> kkf lk (\f -> kka lk (rk . f))
+  (ContEitherT kka) *> (ContEitherT kkb) =
+    ContEitherT $ \lk rk -> kka lk (\_ -> kkb lk rk)
+  (ContEitherT kka) <* (ContEitherT kkb) =
+    ContEitherT $ \lk rk -> kka lk (\a -> kkb lk (rk . const a))
+
 
 type ContEither = ContEitherT Identity
 runContEither :: ContEither l r -> (l -> z) -> (r -> z) -> z
@@ -138,7 +149,6 @@ rqGetIpVersion req = do
   case reqAddr of
     SockAddrInet _ _ -> return Ipv4
     SockAddrInet6 _ _ _ _ -> return Ipv6
-      
 
 completeSnap :: AnnounceEnv -> Snap ()
 completeSnap env = 
@@ -176,7 +186,7 @@ parseDec :: (Integral a) => B.ByteString -> B.ByteString -> ContEitherT m B.Byte
 parseDec name val = maybeParse name val decimal
 
 parsePort :: B.ByteString -> B.ByteString -> ContEitherT m B.ByteString PortNumber
-parsePort name val = maybeParse name val (PortNum <$> decimal)
+parsePort name val = maybeParse name val decimal
 
 parseSockAddr :: PortNumber -> B.ByteString -> B.ByteString -> ContEitherT m B.ByteString SockAddr
 parseSockAddr pnum name val = maybeParse name val parser
@@ -215,8 +225,9 @@ parseIp6 = complete6 <|> seperated6
                     Word16 -> Word16 -> Word16 -> Word16 ->
                     HostAddress6
     packComplete a b c d e f g h = (
-      (fi a) `shiftL` 16 .|. (fi b), (fi c) `shiftL` 16 .|. (fi d),
-      (fi e) `shiftL` 16 .|. (fi f), (fi g) `shiftL` 16 .|. (fi h))
+      byteSwap a b, byteSwap c d, byteSwap e f, byteSwap g h)
+    byteSwap :: Word16 -> Word16 -> Word32
+    byteSwap a b = toBigEndian $ (fi a) `shiftL` 16 .|. (fi b)
     seperated6 = sepByUpto 7 hex colon >>= \pre ->
       packSeparated pre <$ doubleColon <*> sepByUpto (7 - (length pre)) hex colon
     packSeparated :: [Word16] -> [Word16] -> HostAddress6

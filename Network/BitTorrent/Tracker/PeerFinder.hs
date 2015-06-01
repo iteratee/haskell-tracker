@@ -161,7 +161,7 @@ getLeechers count mphr =
   
 getPeersGen :: Int -> Int -> MVar ProtocolHashRecord -> IO [Peer]
 getPeersGen nSeeders nLeechers mphr = do
-  g1<- newStdGen
+  g1 <- newStdGen
   g2 <- newStdGen
   phr <- takeMVar mphr
   let count = nSeeders + nLeechers
