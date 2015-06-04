@@ -182,7 +182,7 @@ packPeers4 = mapM_ packPeer4
 packPeers6 :: [Peer] -> Put
 packPeers6 = mapM_ packPeer6
   where
-    packPeer6 p = case (peerAddr p) of
+    packPeer6 p = case peerAddr p of
       SockAddrInet6 port _ (a1, a2, a3, a4) _ -> do
         putWord32host a1
         putWord32host a2

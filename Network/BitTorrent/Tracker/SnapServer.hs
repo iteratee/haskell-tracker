@@ -227,7 +227,7 @@ parseIp6 = complete6 <|> seperated6
     packComplete a b c d e f g h = (
       byteSwap a b, byteSwap c d, byteSwap e f, byteSwap g h)
     byteSwap :: Word16 -> Word16 -> Word32
-    byteSwap a b = toBigEndian $ (fi a) `shiftL` 16 .|. (fi b)
+    byteSwap a b = toBigEndian $ fi a `shiftL` 16 .|. fi b
     seperated6 = sepByUpto 7 hex colon >>= \pre ->
       packSeparated pre <$ doubleColon <*> sepByUpto (7 - length pre) hex colon
     packSeparated :: [Word16] -> [Word16] -> HostAddress6
