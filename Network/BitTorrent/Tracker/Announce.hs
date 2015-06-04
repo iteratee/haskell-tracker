@@ -118,13 +118,13 @@ bencodePeer4 p bldr =
   case peerAddr p of
     -- HostAddress is stored in network byte order. So it needs to be written
     -- out as stored.
-    SockAddrInet (PortNum p) h -> putWord32host h <> putWord16be p <> bldr
+    SockAddrInet (PortNum p) h -> putWord32host h <> putWord16host p <> bldr
     _ -> bldr
 bencodePeer6 :: Peer -> Builder -> Builder
 bencodePeer6 p bldr =  
   case peerAddr p of
     SockAddrInet6 (PortNum p) _ (h0,h1,h2,h3) _ ->
-      putWord32be h0 <> putWord32be h1 <> putWord32be h2 <> putWord32be h3 <> putWord16be p <> bldr
+      putWord32host h0 <> putWord32host h1 <> putWord32host h2 <> putWord32host h3 <> putWord16host p <> bldr
     _ -> bldr
 
 bencodeScrape :: (BencodeC b) => ScrapeResponse -> b

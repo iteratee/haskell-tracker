@@ -85,8 +85,8 @@ instance Binary ResponseHeader where
     put $ resTransactionId rh
 
 instance Binary PortNumber where
-  get = liftM PortNum get
-  put (PortNum pn) = put pn
+  get = liftM PortNum getWord16host
+  put (PortNum pn) = putWord16host pn
 
 instance Binary ScrapeResponse where
   get = do
@@ -182,9 +182,12 @@ packPeers4 = mapM_ packPeer4
 packPeers6 :: [Peer] -> Put
 packPeers6 = mapM_ packPeer6
   where
-    packPeer6 p = case peerAddr p of
-      SockAddrInet6 port _ addr _ -> do
-        put addr
+    packPeer6 p = case (peerAddr p) of
+      SockAddrInet6 port _ (a1, a2, a3, a4) _ -> do
+        putWord32host a1
+        putWord32host a2
+        putWord32host a3
+        putWord32host a4
         put port
       _ -> return ()
 
