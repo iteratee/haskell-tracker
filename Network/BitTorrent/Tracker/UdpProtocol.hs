@@ -85,8 +85,8 @@ instance Binary ResponseHeader where
     put $ resTransactionId rh
 
 instance Binary PortNumber where
-  get = liftM PortNum getWord16host
-  put (PortNum pn) = putWord16host pn
+  get = liftM fromIntegral getWord16be
+  put pn = putWord16be (fromIntegral pn)
 
 instance Binary ScrapeResponse where
   get = do
@@ -132,14 +132,14 @@ handleConnect sock rh = do
       return $ Just (respH, connId)
     _ -> return Nothing
 
-getUdpAnnounce4 :: Get Announce
+getUdpAnnounce4 :: Get AnnounceRequest
 getUdpAnnounce4 = getUdpAnnounceGen get SockAddrInet
-getUdpAnnounce6 :: Get Announce
+getUdpAnnounce6 :: Get AnnounceRequest
 getUdpAnnounce6 =
   getUdpAnnounceGen get (\p a -> SockAddrInet6 p 0 a 0)
 getUdpAnnounceGen :: Get a
                      -> (PortNumber -> a -> SockAddr)
-                     -> Get Announce
+                     -> Get AnnounceRequest
 getUdpAnnounceGen getAddr buildSock = do
   ih <- get :: Get InfoHash
   pid <- get :: Get PeerId
@@ -159,7 +159,7 @@ getUdpAnnounceGen getAddr buildSock = do
         0xffffffff -> Nothing
         x -> Just x
   port <- get :: Get PortNumber
-  return Announce {
+  return AnnounceRequest {
       anInfoHash = ih
     , anPeer = Peer { peerId = pid, peerAddr = buildSock port ipaddr }
     , anUploaded = buploaded

@@ -64,7 +64,7 @@ toEither ma = runContEither ma Left Right
 eCatch :: ContEitherT m l r -> (l -> ContEitherT m l r) -> ContEitherT m l r
 eCatch ka handler = ContEitherT $ \lk rk -> runContEitherT ka (\l -> runContEitherT (handler l) lk rk) rk
 
-rqAnnounce :: Request -> ContEitherT m B.ByteString Announce
+rqAnnounce :: Request -> ContEitherT m B.ByteString AnnounceRequest
 rqAnnounce req = do
   let params = rqQueryParams req
   hash <- grabAndParseParam (B8.pack "info_hash") params urlBytes
@@ -90,7 +90,7 @@ rqAnnounce req = do
                     Just SockAddrInet6{} -> reqAddr
                     Just a@(SockAddrInet{}) -> a
                 else reqAddr
-  return Announce {
+  return AnnounceRequest {
     anInfoHash = hash,
     anPeer = Peer {
       peerId = pid,
@@ -144,7 +144,7 @@ scrapeAction env = do
 
 rqGetIpVersion :: Request -> ContEitherT m B.ByteString IpVersion
 rqGetIpVersion req = do
-  let port = (PortNum . fromIntegral . rqRemotePort) req
+  let port = (fromIntegral . rqRemotePort) req
   reqAddr <- parseSockAddr port B8.empty (rqRemoteAddr req)
   case reqAddr of
     SockAddrInet{} -> return Ipv4

@@ -4,6 +4,7 @@ import Control.Monad
 import Control.Monad.Random
 import Data.Digest.SHA1
 import Data.List (nub)
+import Data.Word (Word16)
 import Network.BitTorrent.Tracker.Announce
 import Network.BitTorrent.Tracker.PeerFinder
 import Network.Socket
@@ -143,8 +144,8 @@ instance Arbitrary Word160 where
     return $ Word160 a b c d e
 
 instance Arbitrary PortNumber where
-  arbitrary = liftM PortNum arbitrary
-  shrink (PortNum p) = map PortNum $ shrink p
+  arbitrary = liftM (fromIntegral :: Word16 -> PortNumber) arbitrary
+  shrink = return
 
 instance Arbitrary SockAddr where
   arbitrary =

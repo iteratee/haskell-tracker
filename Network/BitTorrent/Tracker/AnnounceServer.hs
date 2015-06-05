@@ -1,5 +1,17 @@
 {-# LANGUAGE TupleSections #-}
-module Network.BitTorrent.Tracker.AnnounceServer where
+module Network.BitTorrent.Tracker.AnnounceServer
+  ( AnnounceConfig(..)
+  , AnnounceEnv(..)
+  , AnnounceState(..)
+  , AnnounceT(..)
+  , IpVersion(..)
+  , defaultConfig
+  , emptyAnnounceState
+  , handleAnnounce
+  , handleScrape
+  , pruneQueue
+) where
+
 import Control.Concurrent.MVar
 import Control.Monad hiding (forM, mapM)
 import Control.Monad.IO.Class
@@ -17,14 +29,25 @@ import qualified Data.ByteString as B
 import qualified Data.Map as M
 import qualified Data.Set as S
 
+-- | A Map to keep track of when a peer was last seen.
 type ActivityRecord = M.Map PeerId UTCTime
+
+-- | A Queue used to keep track of when a peer was last seen in order of the
+-- sightings. Used together with the ActivityRecord to make sure that only
+-- active hashes are kept around.
 type ActivityQueue = S.Set (UTCTime, Maybe PeerId)
+
+-- | All the state necessary to respond to Announce or Scrape Requests
 data AnnounceState = AnnounceState {
+    -- | The current set of active hashes
     activeHashes :: MVar (M.Map InfoHash HashRecord)
+    -- | A map from hashes to the ActivityRecord for that hash
   , peersLastSeen :: MVar (M.Map InfoHash (MVar ActivityRecord))
+    -- | A map from hashes to the ActivityQueue for that hash
   , peerActivityQueue :: MVar (M.Map InfoHash (MVar ActivityQueue))
 }
 
+-- | Create an empty announce state serving no hashes and having no peers.
 emptyAnnounceState :: IO AnnounceState
 emptyAnnounceState = do
   ah <- newMVar M.empty
@@ -37,6 +60,8 @@ emptyAnnounceState = do
   }
 
 type Seconds = Int32
+
+-- | Configuration parameters for how an Announce Server behaves.
 data AnnounceConfig = AnnounceConfig {
     ancInterval :: ! Seconds
   , ancMaxPeers :: ! Word32
@@ -106,7 +131,7 @@ pruneQueue = do
     cleanUp old rpl =
       foldl' (flip (removePeerId . fromJust . snd)) rpl (S.elems old)
 
-handleAnnounce :: Announce -> AnnounceT AnnounceResponse
+handleAnnounce :: AnnounceRequest -> AnnounceT AnnounceResponse
 handleAnnounce an = do
   let peer = anPeer an
       hash = anInfoHash an
@@ -184,12 +209,12 @@ getProtocolHashRecord peer hr =
     _ -> error "Unix sockets not supported."
       -- TODO: Make this a reasonable exception
 
-isSeeder :: Announce -> Bool
+isSeeder :: AnnounceRequest -> Bool
 isSeeder an = anLeft an == 0
 
 data PeerAction = Add | Shift | Remove
 
-addOrRemovePeer :: Announce -> AnnounceT ()
+addOrRemovePeer :: AnnounceRequest -> AnnounceT ()
 addOrRemovePeer an = do
   let peer = anPeer an
       hash = anInfoHash an
@@ -201,13 +226,13 @@ addOrRemovePeer an = do
     Just Completed -> shiftAnnounce st an
     Just Stopped -> removeAnnounce st an
   where
-    addAnnounce :: AnnounceState -> Announce -> AnnounceT ()
+    addAnnounce :: AnnounceState -> AnnounceRequest -> AnnounceT ()
     addAnnounce = updateAnnounce Add
-    shiftAnnounce :: AnnounceState -> Announce -> AnnounceT ()
+    shiftAnnounce :: AnnounceState -> AnnounceRequest -> AnnounceT ()
     shiftAnnounce = updateAnnounce Shift
-    removeAnnounce :: AnnounceState -> Announce -> AnnounceT ()
+    removeAnnounce :: AnnounceState -> AnnounceRequest -> AnnounceT ()
     removeAnnounce = updateAnnounce Remove
-    updateAnnounce :: PeerAction -> AnnounceState -> Announce -> AnnounceT ()
+    updateAnnounce :: PeerAction -> AnnounceState -> AnnounceRequest -> AnnounceT ()
     updateAnnounce act st an = do
       let activeMapM = activeHashes st
       activeMap <- liftIO $ takeMVar activeMapM
@@ -233,7 +258,7 @@ addOrRemovePeer an = do
                            , phrCompleteCount = compInc (phrCompleteCount phr) }
       where
         makeUpdaters :: (RandomPeerList -> IO RandomPeerList)
-                        -> Announce
+                        -> AnnounceRequest
                         -> (RandomPeerList -> IO RandomPeerList,
                             RandomPeerList -> IO RandomPeerList,
                             Word32 -> Word32)
