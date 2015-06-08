@@ -41,7 +41,8 @@ type ActivityQueue = S.Set (UTCTime, Maybe PeerId)
 data AnnounceState = AnnounceState {
     -- | The current set of active hashes
     activeHashes :: MVar (M.Map InfoHash HashRecord)
-    -- | A map from hashes to the ActivityRecord for that hash
+    -- | A map from hashes to the ActivityRecord for that hash. Used to allow
+    -- removal of entries from the activity queue.
   , peersLastSeen :: MVar (M.Map InfoHash (MVar ActivityRecord))
     -- | A map from hashes to the ActivityQueue for that hash
   , peerActivityQueue :: MVar (M.Map InfoHash (MVar ActivityQueue))
@@ -70,6 +71,7 @@ data AnnounceConfig = AnnounceConfig {
   , ancAddrs :: [(String, String)]
 }
 
+-- | The default config
 defaultConfig :: AnnounceConfig
 defaultConfig = AnnounceConfig {
     ancInterval = 120
@@ -79,19 +81,26 @@ defaultConfig = AnnounceConfig {
   , ancAddrs = [("0.0.0.0", "6969"), ("::", "6970")]
 }
 
+-- | An announce environment is the state and the config.
 data AnnounceEnv = AnnounceEnv {
     anSt :: AnnounceState
   , anConf :: AnnounceConfig
 }
 
+-- | To serve anounce requests, you need access to AnnounceEnv and the ability
+-- to perform IO.
 type AnnounceT = ReaderT AnnounceEnv IO
 
+-- | Helper function to get the state from AnnounceEnv
 getState :: AnnounceT AnnounceState
 getState = asks anSt
 
+-- | Helper function to get the config from AnnounceEnv
 getConf :: AnnounceT AnnounceConfig
 getConf = asks anConf
 
+-- | Remove inactive peers from hashes.
+-- TODO: remove hashes with no active peers.
 pruneQueue :: AnnounceT ()
 pruneQueue = do
   now <- liftIO getCurrentTime
@@ -131,6 +140,7 @@ pruneQueue = do
     cleanUp old rpl =
       foldl' (flip (removePeerId . fromJust . snd)) rpl (S.elems old)
 
+-- | Handle an announce request. Get peers if required.
 handleAnnounce :: AnnounceRequest -> AnnounceT AnnounceResponse
 handleAnnounce an = do
   let peer = anPeer an
@@ -157,6 +167,7 @@ handleAnnounce an = do
                   , plSeeders = Just nSeeders
                   , plLeechers = Just nLeechers, plPeers = peers }
 
+-- | Record a peers activity so they don't get pruned.
 updateActivity :: AnnounceState -> InfoHash -> Peer -> IO ()
 updateActivity st hash peer = do
   lastSeenMap <- takeMVar (peersLastSeen st)
@@ -189,6 +200,7 @@ updateActivity st hash peer = do
             S.insert (now, Just pid) $
             S.delete (old_now, Just pid) queue
 
+-- | Lookup or create a HashRecord for a specific hash.
 getHashRecord :: AnnounceState -> InfoHash -> IO HashRecord
 getHashRecord st hash = do
   hrMap <- takeMVar (activeHashes st)
@@ -201,6 +213,7 @@ getHashRecord st hash = do
       putMVar (activeHashes st) $ M.insert hash hr hrMap
       return hr
 
+-- | Grab the correct ProtocolHashRecord based on a peer's protocol.
 getProtocolHashRecord :: Peer -> HashRecord -> MVar ProtocolHashRecord
 getProtocolHashRecord peer hr =
   case peerAddr peer of
@@ -209,11 +222,15 @@ getProtocolHashRecord peer hr =
     _ -> error "Unix sockets not supported."
       -- TODO: Make this a reasonable exception
 
+-- | Predicate to determine if an announce request is from a seeder or leecher.
 isSeeder :: AnnounceRequest -> Bool
 isSeeder an = anLeft an == 0
 
+-- | A peer is either added, shifted from leecher to seeder, or removed.
 data PeerAction = Add | Shift | Remove
 
+-- | Add or remove a peer (or shift them from leecher to seeder) based on
+-- the action in the AnnounceRequest
 addOrRemovePeer :: AnnounceRequest -> AnnounceT ()
 addOrRemovePeer an = do
   let peer = anPeer an
@@ -266,8 +283,11 @@ addOrRemovePeer an = do
           then (mod, return, id)
           else (return, mod, id)
 
+-- | IpVersion 4 or 6
 data IpVersion = Ipv4 | Ipv6
 
+-- | Handle a scrape request. From the clients perspective the ipv6 and ipv4
+-- servers are separated, so give them a count only for what they can see.
 handleScrape :: IpVersion -> [ScrapeRequest] -> AnnounceT [ScrapeResponse]
 handleScrape ipVersion hashes = do
   hashRecords <- liftIO . readMVar =<< asks (activeHashes . anSt)

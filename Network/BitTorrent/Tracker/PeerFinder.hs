@@ -158,6 +158,7 @@ removePeerId pid rpl =
         , rplNext = M.delete (r, k) nextMap
         , rplReverse = M.delete k reverseMap }
 
+-- | An empty peer list, used when a new hash is added.
 emptyPeerList :: RandomPeerList
 emptyPeerList = RandomPeerList {
     rplCurrent = M.empty
@@ -165,14 +166,20 @@ emptyPeerList = RandomPeerList {
   , rplReverse = M.empty
 }
 
+-- | Size of a peer list. Used in tests
 peerSize :: RandomPeerList -> Int
 peerSize = M.size . rplReverse
 
+-- | Info used to serve requests about a single hash
+-- Protocols are split because it's not safe to trust a client's word about its
+-- Ipv(4/6) address if its connecting over Ipv(6/4). It could lead to an
+-- amplification attack.
 data HashRecord = HashRecord {
     hrInet4 :: MVar ProtocolHashRecord
   , hrInet6 :: MVar ProtocolHashRecord
 }
 
+-- | Empty hash record. Used when a new hash is added.
 emptyHashRecord :: IO HashRecord
 emptyHashRecord = do
   phr4 <- newMVar emptyProtocolHashRecord
@@ -194,6 +201,7 @@ data ProtocolHashRecord = ProtocolHashRecord {
   , phrCompleteCount :: ! Word32
 }
 
+-- | An empty ProtoclHashRecord. Used  when a new hash is added.
 emptyProtocolHashRecord :: ProtocolHashRecord
 emptyProtocolHashRecord = ProtocolHashRecord {
     phrSeeders = emptyPeerList

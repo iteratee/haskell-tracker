@@ -17,7 +17,12 @@ import qualified Data.ByteString.Char8 as B8
 oneMinuteMicros :: Int
 oneMinuteMicros = 60 * 1000 * 1000
 
-udpServerThread :: AnnounceEnv -> IO ()
+-- | Udp server thread. Shares the announce environment with the http server.
+udpServerThread ::
+    -- | The environment necessary to handle announce and scrape requests
+    AnnounceEnv ->
+    -- | Run forever
+    IO ()
 udpServerThread anEnv = do
   putStrLn "Starting udp servers."
   env <- makeUdpEnv anEnv
@@ -41,11 +46,13 @@ udpServerThread anEnv = do
       threadDelay (2 * oneMinuteMicros)
       runReaderT cycleKeys env
 
+-- | Thread to prune inactive hashes from the maps
 pruneInactiveThread :: AnnounceEnv -> IO ()
 pruneInactiveThread anEnv = forever $ do
   threadDelay oneMinuteMicros
   runReaderT pruneQueue anEnv
 
+-- | Http server thread
 snapServerThread :: AnnounceEnv -> IO ()
 snapServerThread env = do
   putStrLn "Starting snap server."
@@ -63,4 +70,6 @@ main = do
   forkIO $ udpServerThread anEnv
   forkIO $ pruneInactiveThread anEnv
   forkIO $ snapServerThread anEnv
+  -- It's cleaner to leave the main thread alone than to use it for one of the
+  -- servers, as the runtime treats it specially.
   forever $ threadDelay oneMinuteMicros
