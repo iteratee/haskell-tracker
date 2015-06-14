@@ -86,11 +86,13 @@ getNPeers count peerlist = do
         let initialResult = M.elems currMap
             (left, right) = splitMap count' nextMap
             result = initialResult ++ M.elems left
-        newAssocs <- mapM buildRandKey result
-        let newMap = M.fromList newAssocs
-            newReverse = updateReverseMap newAssocs reverseMap
+        newAssocs <- mapM buildRandKey (M.elems left)
+        oldAssocs <- mapM buildRandKey (initialResult)
+        let newOldMap = appendToMap right oldAssocs
+            newMap = M.fromList newAssocs
+            newReverse = updateReverseMap (oldAssocs ++ newAssocs) reverseMap
             peerlist' =
-              RandomPeerList { rplCurrent = right
+              RandomPeerList { rplCurrent = newOldMap
                              , rplNext = newMap
                              , rplReverse = newReverse }
         return (result, peerlist')
