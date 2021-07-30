@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+
 {-|
 Module      : Data.Torrent.Bencode
 Description : Types and functions for handling B-encoded data.
@@ -11,30 +12,30 @@ Portability : TypeFamilies
 Bencode Data type and Bencode Catamporphisms, together with a serializer and a
 deserializer.
 -}
-module Data.Torrent.Bencode 
+module Data.Torrent.Bencode
   ( Bencode(..)
   , BencodeC(..)
   , serialize
   , deserialize
   ) where
 
-import Control.Applicative
-import Data.ByteString.Lazy.Builder
-import Data.ByteString.Lazy.Builder.ASCII
-import Data.Int
-import Data.Monoid
-import qualified Data.Attoparsec.ByteString.Char8 as AP
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as B
-import qualified Data.Map as M
+import           Control.Applicative
+import qualified Data.Attoparsec.ByteString.Char8   as AP
+import qualified Data.ByteString                    as B
+import qualified Data.ByteString.Char8              as B
+import           Data.ByteString.Lazy.Builder
+import           Data.ByteString.Lazy.Builder.ASCII
+import           Data.Int
+import qualified Data.Map                           as M
+import           Data.Monoid
 
 -- | ADT representing Bittorrent B-encoded data
-data Bencode =
-  BeString B.ByteString |  -- ^ String
-  BeInt Int64 |  -- ^ Int (Bittorrent doesn't specify a max int size,
+data Bencode
+  = BeString B.ByteString -- ^ String
+  | BeInt Int64 -- ^ Int (Bittorrent doesn't specify a max int size,
                  -- but 64 bits should be sufficient)
-  BeList [Bencode] |  -- ^ A list, consisting of B-encoded values
-  BeDict (M.Map B.ByteString Bencode)  -- ^ A map from strings to B-encoded
+  | BeList [Bencode] -- ^ A list, consisting of B-encoded values
+  | BeDict (M.Map B.ByteString Bencode) -- ^ A map from strings to B-encoded
                                        -- values
   deriving (Show)
 
@@ -59,41 +60,42 @@ data Bencode =
 --
 -- A BencodeC instance exists for Bencode to allow you to test code that
 -- produces BencodeC expressions.
-class BencodeC a where
+class BencodeC a
   -- | ListIntermediate. Used by beList
   -- A catamorphism for Bencoded data also includes a catamorphism for a list.
+  where
   data Li a :: *
   -- | DictIntermediate. Used by beDict
   -- A catamorphism for Bencoded data also includes a catamorphism for a
   -- dictionary.
   data Di a :: *
-  beString :: B.ByteString -> a  -- ^ Consume a ByteString as B-encoded data
-  beInt :: Int64 -> a  -- ^ Consume an int as B-encoded data
-  beListCataNil :: Li a  -- ^ Nil for the list catamorphism.
-  beListCataCons :: (a -> Li a -> Li a)  -- ^ Cons for the list catamorphism
-  beDictCataNil :: Di a  -- ^ Nil for the dict catamorphism
+  beString :: B.ByteString -> a -- ^ Consume a ByteString as B-encoded data
+  beInt :: Int64 -> a -- ^ Consume an int as B-encoded data
+  beListCataNil :: Li a -- ^ Nil for the list catamorphism.
+  beListCataCons :: (a -> Li a -> Li a) -- ^ Cons for the list catamorphism
+  beDictCataNil :: Di a -- ^ Nil for the dict catamorphism
   beDictCataCons :: (B.ByteString -> a -> Di a -> Di a)
   -- ^ Cons-like function for the dict catamorphism. Takes a key and a value.
-  beList :: Li a -> a  -- ^ Complete the list catamorphism and consume an Li as
+  beList :: Li a -> a -- ^ Complete the list catamorphism and consume an Li as
                        -- B-encoded data
-  beDict :: Di a -> a  -- ^ Complete the dict catamorphism and consume an Di as
+  beDict :: Di a -> a -- ^ Complete the dict catamorphism and consume an Di as
                        -- B-encoded data
 
 -- | Bencode is itself a Bencode Catamorphism.
 -- In fact it's universal in that there's a natural map from this catamorphism
 -- to any other.
 instance BencodeC Bencode where
-  data Li Bencode = BeListRaw [Bencode]  -- ^ Simple wrapper type.
+  data Li Bencode = BeListRaw [Bencode] -- ^ Simple wrapper type.
   data Di Bencode = BeDictRaw [(B.ByteString, Bencode)]
   -- ^ This could be a map but since this is mainly for testing, this is simple.
   beString = BeString
   beInt = BeInt
   beListCataNil = BeListRaw []
-  beListCataCons x (BeListRaw xs) = BeListRaw (x:xs)
+  beListCataCons x (BeListRaw xs) = BeListRaw (x : xs)
   beDictCataNil = BeDictRaw []
-  beDictCataCons k v (BeDictRaw kvs) = BeDictRaw ((k,v):kvs)
+  beDictCataCons k v (BeDictRaw kvs) = BeDictRaw ((k, v) : kvs)
   beList (BeListRaw l) = BeList l
-  beDict (BeDictRaw kvs) = BeDict . M.fromList $ kvs 
+  beDict (BeDictRaw kvs) = BeDict . M.fromList $ kvs
   -- ^ Unwrap and then build a map.
 
 -- | Builder is a Bencode Catamorphism.
@@ -106,8 +108,8 @@ instance BencodeC Builder where
   beListCataNil = BuilderLi mempty
   beListCataCons h (BuilderLi t) = BuilderLi (h <> t)
   beDictCataNil = BuilderDi mempty
-  beDictCataCons k v (BuilderDi bldr) = BuilderDi $
-    (serialize . BeString) k <> v <> bldr
+  beDictCataCons k v (BuilderDi bldr) =
+    BuilderDi $ (serialize . BeString) k <> v <> bldr
   -- | beList serializes the wrapped builder surrounded by 'l' and 'e'
   beList (BuilderLi b) = char8 'l' <> b <> char8 'e'
   -- | beDict serializes the wrapped builder surrounded by 'd' and 'e'
@@ -119,17 +121,15 @@ instance BencodeC Builder where
 serialize :: Bencode -> Builder
 serialize (BeString str) =
   int64Dec (fromIntegral $ B.length str) <> char8 ':' <> byteString str
-serialize (BeInt i) =
-  char8 'i' <> int64Dec i <> char8 'e'
-serialize (BeList l) =
-  char8 'l' <> mconcat (map serialize l) <> char8 'e'
-serialize (BeDict m) =
-  char8 'd' <> serializeMap m <> char8 'e'
+serialize (BeInt i) = char8 'i' <> int64Dec i <> char8 'e'
+serialize (BeList l) = char8 'l' <> mconcat (map serialize l) <> char8 'e'
+serialize (BeDict m) = char8 'd' <> serializeMap m <> char8 'e'
   where
     serializeMap :: M.Map B.ByteString Bencode -> Builder
     serializeMap =
-      M.foldrWithKey (\k v bldr ->
-        (serialize . BeString) k <> serialize v <> bldr) mempty
+      M.foldrWithKey
+        (\k v bldr -> (serialize . BeString) k <> serialize v <> bldr)
+        mempty
 
 -- | Fold over alternatives in a parser.
 -- Rather than construct a list and then deconstruct it, simply pass the fold
@@ -151,7 +151,8 @@ foldAlt cons nil v = many_v
 -- @
 -- foldr (uncurry cons) nil <$> many ((,) <$> k <*> v)
 -- @
-foldAltKey :: (k -> a -> b -> b) -> b -> AP.Parser k -> AP.Parser a -> AP.Parser b
+foldAltKey ::
+     (k -> a -> b -> b) -> b -> AP.Parser k -> AP.Parser a -> AP.Parser b
 foldAltKey cons nil k v = many_kv
   where
     many_kv = some_kv <|> pure nil

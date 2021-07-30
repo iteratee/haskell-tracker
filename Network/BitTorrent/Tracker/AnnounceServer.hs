@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+
 module Network.BitTorrent.Tracker.AnnounceServer
   ( AnnounceConfig(..)
   , AnnounceEnv(..)
@@ -10,24 +11,24 @@ module Network.BitTorrent.Tracker.AnnounceServer
   , handleAnnounce
   , handleScrape
   , pruneQueue
-) where
+  ) where
 
-import Control.Concurrent.MVar
-import Control.Monad hiding (forM, mapM)
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Reader
-import Data.Int
-import Data.List (foldl')
-import Data.Maybe
-import Data.Time.Clock
-import Data.Traversable
-import Data.Word
-import Network.BitTorrent.Tracker.Announce
-import Network.BitTorrent.Tracker.PeerFinder
-import Network.Socket
-import qualified Data.ByteString as B
-import qualified Data.Map as M
-import qualified Data.Set as S
+import           Control.Concurrent.MVar
+import           Control.Monad                         hiding (forM, mapM)
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Reader
+import qualified Data.ByteString                       as B
+import           Data.Int
+import           Data.List                             (foldl')
+import qualified Data.Map                              as M
+import           Data.Maybe
+import qualified Data.Set                              as S
+import           Data.Time.Clock
+import           Data.Traversable
+import           Data.Word
+import           Network.BitTorrent.Tracker.Announce
+import           Network.BitTorrent.Tracker.PeerFinder
+import           Network.Socket
 
 -- | A Map to keep track of when a peer was last seen.
 type ActivityRecord = M.Map PeerId UTCTime
@@ -38,15 +39,15 @@ type ActivityRecord = M.Map PeerId UTCTime
 type ActivityQueue = S.Set (UTCTime, Maybe PeerId)
 
 -- | All the state necessary to respond to Announce or Scrape Requests
-data AnnounceState = AnnounceState {
+data AnnounceState = AnnounceState
     -- | The current set of active hashes
-    activeHashes :: MVar (M.Map InfoHash HashRecord)
+  { activeHashes      :: MVar (M.Map InfoHash HashRecord)
     -- | A map from hashes to the ActivityRecord for that hash. Used to allow
     -- removal of entries from the activity queue.
-  , peersLastSeen :: MVar (M.Map InfoHash (MVar ActivityRecord))
+  , peersLastSeen     :: MVar (M.Map InfoHash (MVar ActivityRecord))
     -- | A map from hashes to the ActivityQueue for that hash
   , peerActivityQueue :: MVar (M.Map InfoHash (MVar ActivityQueue))
-}
+  }
 
 -- | Create an empty announce state serving no hashes and having no peers.
 emptyAnnounceState :: IO AnnounceState
@@ -54,38 +55,37 @@ emptyAnnounceState = do
   ah <- newMVar M.empty
   pls <- newMVar M.empty
   paq <- newMVar M.empty
-  return AnnounceState {
-      activeHashes = ah
-    , peersLastSeen = pls
-    , peerActivityQueue = paq
-  }
+  return
+    AnnounceState
+      {activeHashes = ah, peersLastSeen = pls, peerActivityQueue = paq}
 
 type Seconds = Int32
 
 -- | Configuration parameters for how an Announce Server behaves.
-data AnnounceConfig = AnnounceConfig {
-    ancInterval :: ! Seconds
-  , ancMaxPeers :: ! Word32
-  , ancDefaultPeers :: ! Word32
-  , ancIdlePeerTimeout :: ! Seconds
-  , ancAddrs :: [(String, String)]
-}
+data AnnounceConfig = AnnounceConfig
+  { ancInterval        :: !Seconds
+  , ancMaxPeers        :: !Word32
+  , ancDefaultPeers    :: !Word32
+  , ancIdlePeerTimeout :: !Seconds
+  , ancAddrs           :: [(String, String)]
+  }
 
 -- | The default config
 defaultConfig :: AnnounceConfig
-defaultConfig = AnnounceConfig {
-    ancInterval = 120
-  , ancMaxPeers = 50
-  , ancDefaultPeers = 30
-  , ancIdlePeerTimeout = 360 -- Six minutes, three announce intervals
-  , ancAddrs = [("0.0.0.0", "6969"), ("::", "6970")]
-}
+defaultConfig =
+  AnnounceConfig
+    { ancInterval = 120
+    , ancMaxPeers = 50
+    , ancDefaultPeers = 30
+    , ancIdlePeerTimeout = 360 -- Six minutes, three announce intervals
+    , ancAddrs = [("0.0.0.0", "6969"), ("::", "6970")]
+    }
 
 -- | An announce environment is the state and the config.
-data AnnounceEnv = AnnounceEnv {
-    anSt :: AnnounceState
+data AnnounceEnv = AnnounceEnv
+  { anSt   :: AnnounceState
   , anConf :: AnnounceConfig
-}
+  }
 
 -- | To serve anounce requests, you need access to AnnounceEnv and the ability
 -- to perform IO.
@@ -116,26 +116,30 @@ pruneQueue = do
     let hr = hrMap M.! hash
     pruneHashQueue now hashActivityM hashQueueM hr
   where
-    pruneHashQueue :: UTCTime
-                       -> MVar ActivityRecord
-                       -> MVar ActivityQueue
-                       -> HashRecord
-                       -> AnnounceT ()
+    pruneHashQueue ::
+         UTCTime
+      -> MVar ActivityRecord
+      -> MVar ActivityQueue
+      -> HashRecord
+      -> AnnounceT ()
     pruneHashQueue now hashActivityM hashQueueM hr = do
       activity <- liftIO $ takeMVar hashActivityM
       queue <- liftIO $ takeMVar hashQueueM
       timeout <- liftM ancIdlePeerTimeout getConf
       let old_now = addUTCTime (fromIntegral $ negate timeout) now
           (old, queue') = S.split (old_now, Nothing) queue
-          activity' = foldl' (flip (M.delete . fromJust . snd)) activity (S.elems old)
+          activity' =
+            foldl' (flip (M.delete . fromJust . snd)) activity (S.elems old)
       liftIO $ putMVar hashActivityM activity'
       liftIO $ putMVar hashQueueM queue'
-      liftIO $ forM_ [hrInet4 hr, hrInet6 hr] $ \phrM -> do
-        phr <- takeMVar phrM
-        putMVar phrM $ phr {
-            phrSeeders = cleanUp old (phrSeeders phr)
-          , phrLeechers = cleanUp old (phrLeechers phr)
-        }
+      liftIO $
+        forM_ [hrInet4 hr, hrInet6 hr] $ \phrM -> do
+          phr <- takeMVar phrM
+          putMVar phrM $
+            phr
+              { phrSeeders = cleanUp old (phrSeeders phr)
+              , phrLeechers = cleanUp old (phrLeechers phr)
+              }
     cleanUp :: S.Set (UTCTime, Maybe PeerId) -> RandomPeerList -> RandomPeerList
     cleanUp old rpl =
       foldl' (flip (removePeerId . fromJust . snd)) rpl (S.elems old)
@@ -149,23 +153,28 @@ handleAnnounce an = do
   hr <- liftIO $ getHashRecord st hash
   liftIO $ updateActivity st hash peer
   let phr = getProtocolHashRecord peer hr
-      peerGetter 
+      peerGetter
         | anEvent an == Just Completed = \count phr -> return []
-        | isSeeder an                  = getLeechers
-        | otherwise                    = getPeers
+        | isSeeder an = getLeechers
+        | otherwise = getPeers
   maxPeers <- liftM ancMaxPeers getConf
   defPeers <- liftM ancDefaultPeers getConf
-  let peersWanted = case anEvent an of
-        Just Completed -> 0
-        _ -> fromMaybe defPeers (anWant an)
+  let peersWanted =
+        case anEvent an of
+          Just Completed -> 0
+          _              -> fromMaybe defPeers (anWant an)
       peerCount = min maxPeers peersWanted
   peers <- liftIO $ peerGetter (fromIntegral peerCount) phr
   interval <- liftM ancInterval getConf
   addOrRemovePeer an
   (nSeeders, nLeechers, _) <- liftIO $ getPeerCounts phr
-  return PeerList { plInterval = fromIntegral interval
-                  , plSeeders = Just nSeeders
-                  , plLeechers = Just nLeechers, plPeers = peers }
+  return
+    PeerList
+      { plInterval = fromIntegral interval
+      , plSeeders = Just nSeeders
+      , plLeechers = Just nLeechers
+      , plPeers = peers
+      }
 
 -- | Record a peers activity so they don't get pruned.
 updateActivity :: AnnounceState -> InfoHash -> Peer -> IO ()
@@ -197,8 +206,7 @@ updateActivity st hash peer = do
         Just old_now -> do
           putMVar lastSeenM $ M.insert pid now lastSeen
           putMVar queueM $
-            S.insert (now, Just pid) $
-            S.delete (old_now, Just pid) queue
+            S.insert (now, Just pid) $ S.delete (old_now, Just pid) queue
 
 -- | Lookup or create a HashRecord for a specific hash.
 getHashRecord :: AnnounceState -> InfoHash -> IO HashRecord
@@ -217,9 +225,9 @@ getHashRecord st hash = do
 getProtocolHashRecord :: Peer -> HashRecord -> MVar ProtocolHashRecord
 getProtocolHashRecord peer hr =
   case peerAddr peer of
-    SockAddrInet{} -> hrInet4 hr
-    SockAddrInet6{} -> hrInet6 hr
-    _ -> error "Unix sockets not supported."
+    SockAddrInet {}  -> hrInet4 hr
+    SockAddrInet6 {} -> hrInet6 hr
+    _                -> error "Unix sockets not supported."
       -- TODO: Make this a reasonable exception
 
 -- | Predicate to determine if an announce request is from a seeder or leecher.
@@ -227,7 +235,10 @@ isSeeder :: AnnounceRequest -> Bool
 isSeeder an = anLeft an == 0
 
 -- | A peer is either added, shifted from leecher to seeder, or removed.
-data PeerAction = Add | Shift | Remove
+data PeerAction
+  = Add
+  | Shift
+  | Remove
 
 -- | Add or remove a peer (or shift them from leecher to seeder) based on
 -- the action in the AnnounceRequest
@@ -236,12 +247,13 @@ addOrRemovePeer an = do
   let peer = anPeer an
       hash = anInfoHash an
   st <- getState
-  case anEvent an of
+  case anEvent an
     -- On a non-event add them just in case
-    Nothing -> addAnnounce st an
-    Just Started -> addAnnounce st an
+        of
+    Nothing        -> addAnnounce st an
+    Just Started   -> addAnnounce st an
     Just Completed -> shiftAnnounce st an
-    Just Stopped -> removeAnnounce st an
+    Just Stopped   -> removeAnnounce st an
   where
     addAnnounce :: AnnounceState -> AnnounceRequest -> AnnounceT ()
     addAnnounce = updateAnnounce Add
@@ -249,57 +261,75 @@ addOrRemovePeer an = do
     shiftAnnounce = updateAnnounce Shift
     removeAnnounce :: AnnounceState -> AnnounceRequest -> AnnounceT ()
     removeAnnounce = updateAnnounce Remove
-    updateAnnounce :: PeerAction -> AnnounceState -> AnnounceRequest -> AnnounceT ()
+    updateAnnounce ::
+         PeerAction -> AnnounceState -> AnnounceRequest -> AnnounceT ()
     updateAnnounce act st an = do
       let activeMapM = activeHashes st
       activeMap <- liftIO $ takeMVar activeMapM
-      hr <- case M.lookup (anInfoHash an) activeMap of
-        Nothing -> liftIO $ do
-          newHr <- emptyHashRecord
-          putMVar activeMapM $ M.insert (anInfoHash an) newHr activeMap
-          return newHr
-        Just hr -> return hr
+      hr <-
+        case M.lookup (anInfoHash an) activeMap of
+          Nothing ->
+            liftIO $ do
+              newHr <- emptyHashRecord
+              putMVar activeMapM $ M.insert (anInfoHash an) newHr activeMap
+              return newHr
+          Just hr -> return hr
       liftIO $ putMVar activeMapM activeMap
       let phrM = getProtocolHashRecord (anPeer an) hr
       phr <- liftIO $ takeMVar phrM
-      let (seedUpdater, leechUpdater, compInc) = case act of
-            Shift -> (addPeer (anPeer an),
-                      return . removePeerId (peerId (anPeer an)), (+1))
-            Add -> makeUpdaters (addPeer (anPeer an)) an
-            Remove -> makeUpdaters (return . removePeerId (peerId (anPeer an))) an
+      let (seedUpdater, leechUpdater, compInc) =
+            case act of
+              Shift ->
+                ( addPeer (anPeer an)
+                , return . removePeerId (peerId (anPeer an))
+                , (+ 1))
+              Add -> makeUpdaters (addPeer (anPeer an)) an
+              Remove ->
+                makeUpdaters (return . removePeerId (peerId (anPeer an))) an
       liftIO $ do
         seeders' <- seedUpdater (phrSeeders phr)
         leechers' <- leechUpdater (phrLeechers phr)
-        putMVar phrM $ phr { phrSeeders = seeders'
-                           , phrLeechers = leechers'
-                           , phrCompleteCount = compInc (phrCompleteCount phr) }
+        putMVar phrM $
+          phr
+            { phrSeeders = seeders'
+            , phrLeechers = leechers'
+            , phrCompleteCount = compInc (phrCompleteCount phr)
+            }
       where
-        makeUpdaters :: (RandomPeerList -> IO RandomPeerList)
-                        -> AnnounceRequest
-                        -> (RandomPeerList -> IO RandomPeerList,
-                            RandomPeerList -> IO RandomPeerList,
-                            Word32 -> Word32)
-        makeUpdaters mod an = if isSeeder an
-          then (mod, return, id)
-          else (return, mod, id)
+        makeUpdaters ::
+             (RandomPeerList -> IO RandomPeerList)
+          -> AnnounceRequest
+          -> ( RandomPeerList -> IO RandomPeerList
+             , RandomPeerList -> IO RandomPeerList
+             , Word32 -> Word32)
+        makeUpdaters mod an =
+          if isSeeder an
+            then (mod, return, id)
+            else (return, mod, id)
 
 -- | IpVersion 4 or 6
-data IpVersion = Ipv4 | Ipv6
+data IpVersion
+  = Ipv4
+  | Ipv6
 
 -- | Handle a scrape request. From the clients perspective the ipv6 and ipv4
 -- servers are separated, so give them a count only for what they can see.
 handleScrape :: IpVersion -> [ScrapeRequest] -> AnnounceT [ScrapeResponse]
 handleScrape ipVersion hashes = do
   hashRecords <- liftIO . readMVar =<< asks (activeHashes . anSt)
-  forM hashes $ \hash -> liftIO $
+  forM hashes $ \hash ->
+    liftIO $
     case M.lookup hash hashRecords of
       Nothing -> return emptyScrapeResponse
       Just hr -> do
-        let mphr = case ipVersion of
-              Ipv4 -> hrInet4 hr
-              Ipv6 -> hrInet6 hr
+        let mphr =
+              case ipVersion of
+                Ipv4 -> hrInet4 hr
+                Ipv6 -> hrInet6 hr
         (seeders, leechers, completed) <- getPeerCounts mphr
-        return ScrapeResponse {
-            srSeeders = seeders
-          , srLeechers = leechers
-          , srCompletions = completed }
+        return
+          ScrapeResponse
+            { srSeeders = seeders
+            , srLeechers = leechers
+            , srCompletions = completed
+            }
