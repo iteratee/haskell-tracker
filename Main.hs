@@ -33,7 +33,7 @@ udpServerThread anEnv = do
     sock <- socket (addrFamily serveraddr) Datagram defaultProtocol
     when (addrFamily serveraddr == AF_INET6) $
       setSocketOption sock IPv6Only 1
-    bindSocket sock (addrAddress serveraddr)
+    bind sock (addrAddress serveraddr)
     forkIO $ acceptAndProcessRequests sock env
     forkIO $ cycleKeyThread env
   where

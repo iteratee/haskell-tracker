@@ -62,11 +62,11 @@ data Bencode =
 class BencodeC a where
   -- | ListIntermediate. Used by beList
   -- A catamorphism for Bencoded data also includes a catamorphism for a list.
-  data Li :: * -> *
+  data Li a :: *
   -- | DictIntermediate. Used by beDict
   -- A catamorphism for Bencoded data also includes a catamorphism for a
   -- dictionary.
-  data Di :: * -> *
+  data Di a :: *
   beString :: B.ByteString -> a  -- ^ Consume a ByteString as B-encoded data
   beInt :: Int64 -> a  -- ^ Consume an int as B-encoded data
   beListCataNil :: Li a  -- ^ Nil for the list catamorphism.

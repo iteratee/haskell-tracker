@@ -93,7 +93,7 @@ rqAnnounce req = do
   downloaded <- grabAndParseParam (B8.pack "downloaded") params parseDec
   left <- grabAndParseParam (B8.pack "left") params parseDec
   addr <- optionalParseParam (B8.pack "ip") params (parseSockAddr port)
-  reqAddr <- parseSockAddr port B8.empty (rqRemoteAddr req)
+  reqAddr <- parseSockAddr port B8.empty (rqClientAddr req)
   compact <- optionalParseParam (B8.pack "compact") params parseDec
     :: ContEitherT m B.ByteString (Maybe Word8)
   failWhen (B8.pack "Compact not supported.")
@@ -165,8 +165,8 @@ scrapeAction env = do
 
 rqGetIpVersion :: Request -> ContEitherT m B.ByteString IpVersion
 rqGetIpVersion req = do
-  let port = (fromIntegral . rqRemotePort) req
-  reqAddr <- parseSockAddr port B8.empty (rqRemoteAddr req)
+  let port = (fromIntegral . rqClientPort) req
+  reqAddr <- parseSockAddr port B8.empty (rqClientAddr req)
   case reqAddr of
     SockAddrInet{} -> return Ipv4
     SockAddrInet6{} -> return Ipv6
