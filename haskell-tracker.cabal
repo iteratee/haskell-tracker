@@ -32,6 +32,7 @@ test-suite PeerFinderTest
   main-is:           PeerFinderTest.hs
   type:              exitcode-stdio-1.0
   other-modules:
+    Data.Torrent.Bencode,
     Network.BitTorrent.Tracker.Announce,
     Network.BitTorrent.Tracker.PeerFinder
   build-depends:

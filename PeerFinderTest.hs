@@ -139,6 +139,9 @@ prop_has_all_peers rpl =
       nextMap = rplNext rpl
    in all (`hasPeer` rpl) $ M.elems currMap ++ M.elems nextMap
 
+instance MonadFail Gen where
+  fail = error
+
 instance Arbitrary Word160 where
   arbitrary = do
     [a, b, c, d, e] <- replicateM 5 arbitrary

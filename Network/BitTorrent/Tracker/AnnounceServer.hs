@@ -88,7 +88,7 @@ data AnnounceEnv = AnnounceEnv
   }
 
 -- | To serve anounce requests, you need access to AnnounceEnv and the ability
--- to perform IO.
+--   to perform IO.
 type AnnounceT = ReaderT AnnounceEnv IO
 
 -- | Helper function to get the state from AnnounceEnv
@@ -100,7 +100,7 @@ getConf :: AnnounceT AnnounceConfig
 getConf = asks anConf
 
 -- | Remove inactive peers from hashes.
--- TODO: remove hashes with no active peers.
+--   TODO: remove hashes with no active peers.
 pruneQueue :: AnnounceT ()
 pruneQueue = do
   now <- liftIO getCurrentTime
