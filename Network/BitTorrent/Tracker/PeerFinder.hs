@@ -83,7 +83,7 @@ getNPeers count peerlist = do
                  (left, right) = splitMap count' nextMap
                  result = initialResult ++ M.elems left
              newAssocs <- mapM buildRandKey (M.elems left)
-             oldAssocs <- mapM buildRandKey (initialResult)
+             oldAssocs <- mapM buildRandKey initialResult
              let newOldMap = appendToMap right oldAssocs
                  newMap = M.fromList newAssocs
                  newReverse =
@@ -256,3 +256,4 @@ getPeerCounts mphr = do
     ( fromIntegral $ peerSize seeders
     , fromIntegral $ peerSize leechers
     , completed)
+

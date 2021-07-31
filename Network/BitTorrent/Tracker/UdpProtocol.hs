@@ -10,7 +10,7 @@ import           Data.Binary.Get
 import           Data.Binary.Put
 import           Data.Bits
 import qualified Data.ByteString                           as B
-import qualified Data.ByteString.Char8                     as B8 (pack)
+import qualified Data.ByteString.Char8                     as B8 ()
 import qualified Data.ByteString.Lazy                      as BL
 import           Data.Digest.SHA1
 import           Data.Maybe
@@ -120,7 +120,7 @@ instance Binary ResponseHeader where
     put $ resTransactionId rh
 
 instance Binary PortNumber where
-  get = liftM fromIntegral getWord16be
+  get = fmap fromIntegral getWord16be
   put pn = putWord16be (fromIntegral pn)
 
 instance Binary ScrapeResponse where
@@ -150,8 +150,8 @@ fetchPrevKey :: UdpT ShorthashKey
 fetchPrevKey = liftIO . readMVar =<< asks prevKey
 
 -- | Helper function to check if a connection is valid
-isValidConnId
-  :: SockAddr
+isValidConnId ::
+     SockAddr
     -- ^ The address that the udp connection is coming from.
   -> ConnectionId
     -- ^ The connection id supplied from the network
@@ -168,16 +168,16 @@ isValidConnId sock connId = do
 
 -- | Handle a connection request. Uses `currKey` to produce a keyed hash of the
 --   connection details if the connection request is well formed.
-handleConnect
-  :: SockAddr
+handleConnect ::
+     SockAddr
     -- ^ The address the request came in on.
   -> RequestHeader
     -- ^ The RequestHeader that was supplied in the connection request
   -> UdpT (Maybe (ResponseHeader, ConnectionId))
     -- ^ Returns @Just (ResponseHeader, ConnectionId)@ if the request was valid,
     --   otherwise returns @Nothing@
-handleConnect sock rh = do
-  case (reqConnectionId rh) of
+handleConnect sock rh =
+  case reqConnectionId rh of
     0x41727101980 -> do
       key <- fetchCurrKey
       let connStr = connectionHashString sock
@@ -194,8 +194,8 @@ getUdpAnnounce6 :: Get AnnounceRequest
 getUdpAnnounce6 = getUdpAnnounceGen get (\p a -> SockAddrInet6 p 0 a 0)
 
 -- | Parse a Generic Announce Request from binary data
-getUdpAnnounceGen
-  :: Get a
+getUdpAnnounceGen ::
+     Get a
     -- ^ Read an address of type @a@
   -> (PortNumber -> a -> SockAddr)
     -- ^ Turn a `PortNumber` and an address of type @a@ into a `SockAddr`
@@ -270,8 +270,8 @@ packAnnounceResponse6 :: AnnounceResponse -> Put
 packAnnounceResponse6 = packAnnounceResponseGen packPeers6
 
 -- | Write a Generic response
-packAnnounceResponseGen
-  :: ([Peer] -> Put)
+packAnnounceResponseGen ::
+     ([Peer] -> Put)
     -- ^ Function to write peers to the correct format
   -> AnnounceResponse
     -- ^ `AnnounceResponse` to write
@@ -291,8 +291,8 @@ packAnnounceResponseGen packPeers ar =
       packPeers peers
 
 -- | Process a UDP Request
-handleUdpRequest
-  :: Socket
+handleUdpRequest ::
+     Socket
     -- ^ Socket to send the response
   -> SockAddr
     -- ^ Address on which the request came in
@@ -300,8 +300,9 @@ handleUdpRequest
     -- ^ Request body
   -> UdpT ()
     -- ^ Process the request
-handleUdpRequest sock addr msg =
+handleUdpRequest sock addr msg
   -- Start by parsing a header
+ =
   case runGetOrFail get (BL.fromStrict msg) of
     Left _ -> return () -- Unparseable requests just get dropped
     Right (msg', _, rh) -> do
@@ -347,17 +348,17 @@ handleUdpRequest sock addr msg =
             _ -> do
               let p =
                     put (makeErrorHeader rh) >>
-                    put (B8.pack "Scrape should be a multiple of 20 bytes.")
+                    put "Scrape should be a multiple of 20 bytes."
               writeResponse p
         _ -> do
           let p =
                 put (makeErrorHeader rh) >>
-                put (B8.pack "currently unsupported request.")
+                put "currently unsupported request."
           writeResponse p
   where
     -- | Guard to guarantee that a `Binary` instances correctly deserializes
-    whenParses
-      :: RequestHeader
+    whenParses ::
+         RequestHeader
         -- ^ Header of the request. Used in the failure case
       -> Get a
         -- ^ `Binary` deserializer
@@ -371,11 +372,11 @@ handleUdpRequest sock addr msg =
       case runGetOrFail getter msg of
         Left _ ->
           writeResponse $
-          put (makeErrorHeader rh) >> put (B8.pack "error parsing request.")
+          put (makeErrorHeader rh) >> put "error parsing request."
         Right (_, _, a) -> action a
     -- | Guard to guaratee that a connection id is valid
-    whenValid
-      :: SockAddr
+    whenValid ::
+         SockAddr
         -- ^ Incoming address
       -> RequestHeader
         -- ^ Header with connection id
@@ -387,8 +388,8 @@ handleUdpRequest sock addr msg =
       validity <- isValidConnId addr (reqConnectionId rh)
       when validity action
     -- | Write a response on `sock` to `addr`
-    writeResponse
-      :: Put
+    writeResponse ::
+         Put
         -- ^ A `Put` value to reify into a `B.ByteString`
       -> UdpT ()
         -- ^ Write the value to `sock` at `addr`

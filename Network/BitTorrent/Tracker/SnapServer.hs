@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
 module Network.BitTorrent.Tracker.SnapServer
@@ -19,6 +20,7 @@ import           Data.Digest.SHA1
 import           Data.Either
 import           Data.Endian
 import           Data.Functor.Identity
+import           Data.Functor
 import qualified Data.Map                                  as M
 import           Data.Maybe
 import           Data.Monoid
@@ -96,21 +98,21 @@ eCatch ka handler =
 rqAnnounce :: Request -> ContEitherT m B.ByteString AnnounceRequest
 rqAnnounce req = do
   let params = rqQueryParams req
-  hash <- grabAndParseParam (B8.pack "info_hash") params parseWord160
-  pid <- grabAndParseParam (B8.pack "peer_id") params parseWord160
-  port <- grabAndParseParam (B8.pack "port") params parsePort
-  uploaded <- grabAndParseParam (B8.pack "uploaded") params parseDec
-  downloaded <- grabAndParseParam (B8.pack "downloaded") params parseDec
-  left <- grabAndParseParam (B8.pack "left") params parseDec
-  addr <- optionalParseParam (B8.pack "ip") params (parseSockAddr port)
+  hash <- grabAndParseParam "info_hash" params parseWord160
+  pid <- grabAndParseParam "peer_id" params parseWord160
+  port <- grabAndParseParam "port" params parsePort
+  uploaded <- grabAndParseParam "uploaded" params parseDec
+  downloaded <- grabAndParseParam "downloaded" params parseDec
+  left <- grabAndParseParam "left" params parseDec
+  addr <- optionalParseParam "ip" params (parseSockAddr port)
   reqAddr <- parseSockAddr port B8.empty (rqClientAddr req)
   compact <-
-    optionalParseParam (B8.pack "compact") params parseDec :: ContEitherT m B.ByteString (Maybe Word8)
+    optionalParseParam "compact" params parseDec :: ContEitherT m B.ByteString (Maybe Word8)
   failWhen
-    (B8.pack "Compact not supported.")
+    "Compact not supported."
     (isJust compact && compact /= Just 1)
-  event <- optionalParseParam (B8.pack "event") params parseEvent
-  want <- optionalParseParam (B8.pack "numwant") params parseDec
+  event <- optionalParseParam "event" params parseEvent
+  want <- optionalParseParam "numwant" params parseDec
   let realAddr =
         case reqAddr of
           SockAddrInet6 {} -> reqAddr
@@ -119,7 +121,7 @@ rqAnnounce req = do
               then case addr of
                      Nothing                  -> reqAddr
                      Just SockAddrInet6 {}    -> reqAddr
-                     Just a@(SockAddrInet {}) -> a
+                     Just a@SockAddrInet{} -> a
               else reqAddr
   return
     AnnounceRequest
@@ -154,14 +156,14 @@ announceAction env = do
 -- | Handle scrape requests via HTTP
 scrapeAction :: AnnounceEnv -> Snap ()
 scrapeAction env = do
-  mHashes <- getsRequest (rqQueryParam (B8.pack "info_hash"))
+  mHashes <- getsRequest (rqQueryParam "info_hash")
   case mHashes of
     Nothing -> do
-      writeBS (B8.pack "hashes required.")
+      writeBS "hashes required."
       getResponse >>= finishWith
     Just rawvals -> do
       let kvals = mapM parse rawvals
-          parse = parseWord160 (B8.pack "info_hash")
+          parse = parseWord160 "info_hash"
       runContEitherT kvals failure success
   where
     success hashes = do
@@ -184,8 +186,8 @@ rqGetIpVersion req = do
 
 completeSnap :: AnnounceEnv -> Snap ()
 completeSnap env =
-  path (B8.pack "announce") (method GET $ announceAction env) <|>
-  path (B8.pack "scrape") (method GET $ scrapeAction env)
+  path "announce" (method GET $ announceAction env) <|>
+  path "scrape" (method GET $ scrapeAction env)
 
 -- Parsers and Helpers
 -- | Conditional failure given a fail value and a boolean.
@@ -196,15 +198,15 @@ failWhen _ False = right ()
 
 -- | Helper to construct "<key> missing." messages
 missing :: B.ByteString -> B.ByteString
-missing key = key <> B8.pack " missing."
+missing key = key <> " missing."
 
 -- | Helper to construct "<key> too many times." messages
 tooMany :: B.ByteString -> B.ByteString
-tooMany key = key <> B8.pack " too many times."
+tooMany key = key <> " too many times."
 
 -- | Helper to construct "<key> not formatted correctly." messages
 misformatted :: B.ByteString -> B.ByteString
-misformatted key = key <> B8.pack " not formatted correctly."
+misformatted key = key <> " not formatted correctly."
 
 -- | Parsing helper that lifts a parse result to ContEitherT and returns a
 -- message on parse failure.
@@ -223,7 +225,7 @@ parseWord160 name val =
         Left _ -> left (misformatted name) -- Shouldn't happen
         Right (rem, count, result) -> do
           failWhen
-            (name <> B8.pack " incorrect length")
+            (name <> " incorrect length")
             (count /= 20 || not (BL.null rem))
           return result
     _ -> left (misformatted name)
@@ -260,9 +262,9 @@ fi = fromIntegral
 -- | Parser for text ipv4 address
 parseIp4 :: Parser HostAddress
 parseIp4 =
-  (packBytes <$> decimal <* char '.' <*> decimal <* char '.' <*> decimal <*
-   char '.' <*>
-   decimal)
+  packBytes <$> decimal <* char '.' <*> decimal <* char '.' <*> decimal <*
+    char '.' <*>
+    decimal
   where
     packBytes :: Word8 -> Word8 -> Word8 -> Word8 -> Word32
     packBytes b1 b2 b3 b4 =
@@ -311,16 +313,16 @@ parseIp6 = complete6 <|> seperated6
     packSeparated first last = packSeparated' (first ++ replicate rem 0 ++ last)
       where
         rem = 8 - length first - length last
-    packSeparated' (a:b:c:d:e:f:g:h:[]) = packComplete a b c d e f g h
+    packSeparated' [a, b, c, d, e, f, g, h] = packComplete a b c d e f g h
 
 -- | Parse a client's reported event.
 parseEvent :: B.ByteString -> B.ByteString -> ContEitherT m B.ByteString Event
 parseEvent name val = maybeParse name val parser
   where
     parser =
-      string (B8.pack "completed") *> pure Completed <|>
-      string (B8.pack "started") *> pure Started <|>
-      string (B8.pack "stopped") *> pure Stopped
+      string "completed" $> Completed <|>
+      string "started" $> Started <|>
+      string "stopped" $> Stopped
 
 -- | Separated by Up to, takes a count: k, a parser: p, and a separator: sep,
 -- and parses up to k values of p, discarding sep, and returns them as a list.
@@ -352,7 +354,7 @@ parseOnlyMessage msg raw parser =
 
 -- | Fail when a list is not a singleton, and succeed if it is.
 singletonList :: l -> [a] -> ContEitherT m l a
-singletonList _ (x:[]) = right x
+singletonList _ [x] = right x
 singletonList l _      = left l
 
 -- | Handle 0 or 1 parameters. Fails if there is more than one of the parameter

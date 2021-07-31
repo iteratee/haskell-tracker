@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module Network.BitTorrent.Tracker.AnnounceServer
   ( AnnounceConfig(..)
   , AnnounceEnv(..)
@@ -125,7 +123,7 @@ pruneQueue = do
     pruneHashQueue now hashActivityM hashQueueM hr = do
       activity <- liftIO $ takeMVar hashActivityM
       queue <- liftIO $ takeMVar hashQueueM
-      timeout <- liftM ancIdlePeerTimeout getConf
+      timeout <- fmap ancIdlePeerTimeout getConf
       let old_now = addUTCTime (fromIntegral $ negate timeout) now
           (old, queue') = S.split (old_now, Nothing) queue
           activity' =
@@ -157,15 +155,15 @@ handleAnnounce an = do
         | anEvent an == Just Completed = \count phr -> return []
         | isSeeder an = getLeechers
         | otherwise = getPeers
-  maxPeers <- liftM ancMaxPeers getConf
-  defPeers <- liftM ancDefaultPeers getConf
+  maxPeers <- fmap ancMaxPeers getConf
+  defPeers <- fmap ancDefaultPeers getConf
   let peersWanted =
         case anEvent an of
           Just Completed -> 0
           _              -> fromMaybe defPeers (anWant an)
       peerCount = min maxPeers peersWanted
   peers <- liftIO $ peerGetter (fromIntegral peerCount) phr
-  interval <- liftM ancInterval getConf
+  interval <- fmap ancInterval getConf
   addOrRemovePeer an
   (nSeeders, nLeechers, _) <- liftIO $ getPeerCounts phr
   return

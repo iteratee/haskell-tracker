@@ -151,7 +151,7 @@ instance Arbitrary Word160 where
     return $ Word160 a b c d e
 
 instance Arbitrary PortNumber where
-  arbitrary = liftM (fromIntegral :: Word16 -> PortNumber) arbitrary
+  arbitrary = fmap (fromIntegral :: Word16 -> PortNumber) arbitrary
   shrink = return
 
 instance Arbitrary SockAddr where
@@ -204,4 +204,4 @@ instance Arbitrary RandomPeerList where
                 }
 
 instance Arbitrary StdGen where
-  arbitrary = liftM mkStdGen arbitrary
+  arbitrary = fmap mkStdGen arbitrary
