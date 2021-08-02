@@ -185,23 +185,9 @@ handleConnect sock rh =
       return $ Just (makeResponseHeader rh, connId)
     _ -> return Nothing
 
--- | Parse an IPv4 Announce Request from binary data
-getUdpAnnounce4 :: Get AnnounceRequest
-getUdpAnnounce4 = getUdpAnnounceGen get SockAddrInet
-
--- | Parse an IPv6 Announce Request from binary data
-getUdpAnnounce6 :: Get AnnounceRequest
-getUdpAnnounce6 = getUdpAnnounceGen get (\p a -> SockAddrInet6 p 0 a 0)
-
--- | Parse a Generic Announce Request from binary data
-getUdpAnnounceGen ::
-     Get a
-    -- ^ Read an address of type @a@
-  -> (PortNumber -> a -> SockAddr)
-    -- ^ Turn a `PortNumber` and an address of type @a@ into a `SockAddr`
-  -> Get AnnounceRequest
-    -- ^ The parsed AnnounceRequest
-getUdpAnnounceGen getAddr buildSock = do
+-- | Parse a UDP Announce Request from binary data
+getUdpAnnounce :: Get AnnounceRequest
+getUdpAnnounce = do
   ih <- get :: Get InfoHash
   pid <- get :: Get PeerId
   bdownloaded <- get :: Get Word64
@@ -214,7 +200,7 @@ getUdpAnnounceGen getAddr buildSock = do
           2 -> Just Started
           3 -> Just Stopped
           _ -> Nothing
-  ipaddr <- getAddr
+  ipaddr <- get :: Get HostAddress
   _key <- get :: Get Word32
   wantCode <- get :: Get Word32
   let want =
@@ -225,7 +211,7 @@ getUdpAnnounceGen getAddr buildSock = do
   return
     AnnounceRequest
       { anInfoHash = ih
-      , anPeer = Peer {peerId = pid, peerAddr = buildSock port ipaddr}
+      , anPeer = Peer {peerId = pid, peerAddr = SockAddrInet port ipaddr}
       , anUploaded = buploaded
       , anDownloaded = bdownloaded
       , anLeft = bleft
@@ -306,12 +292,10 @@ handleUdpRequest sock addr msg
   case runGetOrFail get (BL.fromStrict msg) of
     Left _ -> return () -- Unparseable requests just get dropped
     Right (msg', _, rh) -> do
-      let (announceAction, announceGetter, announcePack, ipVersion) =
+      let (announcePack, ipVersion) =
             case addr of
-              SockAddrInet {} ->
-                (1, getUdpAnnounce4, packAnnounceResponse4, Ipv4)
-              SockAddrInet6 {} ->
-                (4, getUdpAnnounce6, packAnnounceResponse6, Ipv6)
+              SockAddrInet {} -> (packAnnounceResponse4, Ipv4)
+              SockAddrInet6 {} -> (packAnnounceResponse6, Ipv6)
       case reqAction rh of
         0 -> do
           mresp <- handleConnect addr rh
@@ -320,22 +304,21 @@ handleUdpRequest sock addr msg
             Just (respHeader, connId) -> do
               let p = put respHeader >> put connId
               writeResponse p
-        x
-          | x == announceAction ->
+        1 ->
             whenValid addr rh $
-            whenParses rh announceGetter msg' $ \an
+            whenParses rh getUdpAnnounce msg' $ \an
             -- We don't trust you. Rewrite the supplied address, unless
             -- you're coming from rfc1918
              -> do
               let an' =
                     case addr of
-                      SockAddrInet6 _ _ addr6 _ -> updateAddr6 addr6 an
+                      SockAddrInet6 _ _ _ _ -> updateAddr addr an
                       SockAddrInet port addr4 ->
                         if isRfc1918 addr4
                           then case peerAddr $ anPeer an of
-                                 SockAddrInet _ 0 -> updateAddr4 addr4 an
+                                 SockAddrInet _ 0 -> updateAddr addr an
                                  _                -> an
-                          else updateAddr4 addr4 an
+                          else updateAddr addr an
               anResp <- liftAnnounceT $ handleAnnounce an'
               writeResponse $ put (makeResponseHeader rh) >> announcePack anResp
         2 ->
@@ -396,16 +379,13 @@ handleUdpRequest sock addr msg
     writeResponse p = do
       let respMsg = BL.toStrict $ runPut p
       liftIO $ sendAllTo sock respMsg addr
-    -- | Replace the IPv6 peer address in an announcement request
-    updateAddr6 addr6 an =
-      let peerAddr' =
-            case peerAddr $ anPeer an of
-              SockAddrInet6 port flow _ scopeId ->
-                SockAddrInet6 port flow addr6 scopeId
-       in an {anPeer = (anPeer an) {peerAddr = peerAddr'}}
-    -- | Replace the IPv4 peer address in an announcement request
-    updateAddr4 addr4 an =
-      let peerAddr' =
-            case peerAddr $ anPeer an of
-              SockAddrInet port _ -> SockAddrInet port addr4
-       in an {anPeer = (anPeer an) {peerAddr = peerAddr'}}
+    -- | Replace the peer address in an announcement request
+    updateAddr addr an =
+      let peer = anPeer an
+          port = case peerAddr peer of
+            SockAddrInet p _ -> p
+            SockAddrInet6 p _ _ _ -> p
+          peerAddr' = case addr of
+            SockAddrInet _ a -> SockAddrInet port a
+            SockAddrInet6 _ f a s -> SockAddrInet6 port f a s
+      in  an { anPeer = peer { peerAddr = peerAddr' } }
