@@ -1,6 +1,13 @@
 {-# LANGUAGE RankNTypes #-}
 module Network.BitTorrent.Tracker.SnapServer
   ( completeSnap
+  , ContEitherT(..)
+  , left
+  , right
+  , liftEither
+  , lowerEither
+  , toEither
+  , eCatch
   ) where
 
 import Control.Applicative
@@ -31,29 +38,26 @@ import qualified Data.Map as M
 
 -- | Continuation based Either. Takes a left and a right continuation, and
 -- procduces a value.
-newtype ContEitherT m l r = ContEitherT { runContEitherT :: forall z. (l -> m z) -> (r -> m z) -> m z }
+newtype ContEitherT l m r = ContEitherT { runContEitherT :: forall z. (l -> m z) -> (r -> m z) -> m z }
 -- | Run the left continuation
-left :: l -> ContEitherT m l r
+left :: l -> ContEitherT l m r
 left l = ContEitherT $ \lk rk -> lk l
 -- | Run the right continuation
-right :: r -> ContEitherT m l r
+right :: r -> ContEitherT l m r
 right r = ContEitherT $ \lk rk -> rk r
 
--- | Lift a plain Either l r to a ContEitherT m l r
-liftEither :: Either l r -> ContEitherT m l r
+-- | Lift a plain Either l r to a ContEitherT l m r
+liftEither :: Either l r -> ContEitherT l m r
 liftEither (Left l) = left l
 liftEither (Right r) = right r
+
+lowerEither :: ContEitherT l Identity r -> Either l r
+lowerEither x = runIdentity $ runContEitherT x (Identity . Left) (Identity . Right)
 
 -- | ContEitherT is really a bifunctor, but we only need plain functor on the
 -- right in this case. Should look similar to the functor instance for ContT
 instance Functor (ContEitherT m l) where
   fmap f (ContEitherT kka) = ContEitherT $ \lk rk -> kka lk (rk . f)
-
--- | ContEitherT is a monad on the right. Note that the failure propogates
--- exactly like it would for either, but without needing to be inspected.
-instance Monad (ContEitherT m l) where
-  return = right
-  (ContEitherT kka) >>= f = ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
 
 -- | ContEitherT is an applicative. Written to satisfy ApplicativeMonad,
 -- not used.
@@ -66,8 +70,17 @@ instance Applicative (ContEitherT m l) where
   (ContEitherT kka) <* (ContEitherT kkb) =
     ContEitherT $ \lk rk -> kka lk (\a -> kkb lk (rk . const a))
 
+-- | ContEitherT is a monad on the right. Note that the failure propogates
+-- exactly like it would for either, but without needing to be inspected.
+instance Monad (ContEitherT l m) where
+  return = right
+  (ContEitherT kka) >>= f = ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
+
+instance MonadTrans (ContEitherT l) where
+  lift mr = ContEitherT $ \lk rk -> mr >>= rk
+
 -- | ContEitherT when we don't need the wrapped monad, just failure.
-type ContEither = ContEitherT Identity
+type ContEither l r = ContEitherT l Identity r
 -- | Unwrap ContEither and run it with a success and failure continuation.
 runContEither :: ContEither l r -> (l -> z) -> (r -> z) -> z
 runContEither ma lk rk = runIdentity $ runContEitherT ma (Identity . lk) (Identity . rk)
@@ -79,7 +92,7 @@ toEither ma = runContEither ma Left Right
 
 -- | Catch for ContEitherT.
 -- Note the similarity to (>>=) above.
-eCatch :: ContEitherT m l r -> (l -> ContEitherT m l r) -> ContEitherT m l r
+eCatch :: ContEitherT l m r -> (l -> ContEitherT l m r) -> ContEitherT l m r
 eCatch ka handler = ContEitherT $ \lk rk -> runContEitherT ka (\l -> runContEitherT (handler l) lk rk) rk
 
 -- | Parse out an AnnounceRequest from an Http Request
