@@ -3,10 +3,18 @@
 
 module Network.BitTorrent.Tracker.SnapServer
   ( completeSnap
+  , ContEitherT(..)
+  , left
+  , right
+  , liftEither
+  , lowerEither
+  , toEither
+  , eCatch
   ) where
 
 import           Control.Applicative
 import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Reader
 import           Data.Attoparsec.ByteString.Char8
 import           Data.Binary
@@ -34,38 +42,34 @@ import           System.Endian
 
 -- | Continuation based Either. Takes a left and a right continuation, and
 -- procduces a value.
-newtype ContEitherT m l r = ContEitherT
+newtype ContEitherT l m r = ContEitherT
   { runContEitherT :: forall z. (l -> m z) -> (r -> m z) -> m z
   }
 
 -- | Run the left continuation
-left :: l -> ContEitherT m l r
+left :: l -> ContEitherT l m r
 left l = ContEitherT $ \lk rk -> lk l
 
 -- | Run the right continuation
-right :: r -> ContEitherT m l r
+right :: r -> ContEitherT l m r
 right r = ContEitherT $ \lk rk -> rk r
 
--- | Lift a plain Either l r to a ContEitherT m l r
-liftEither :: Either l r -> ContEitherT m l r
+-- | Lift a plain Either l r to a ContEitherT l m r
+liftEither :: Either l r -> ContEitherT l m r
 liftEither (Left l)  = left l
 liftEither (Right r) = right r
 
+lowerEither :: ContEitherT l Identity r -> Either l r
+lowerEither x = runIdentity $ runContEitherT x (Identity . Left) (Identity . Right)
+
 -- | ContEitherT is really a bifunctor, but we only need plain functor on the
 -- right in this case. Should look similar to the functor instance for ContT
-instance Functor (ContEitherT m l) where
+instance Functor (ContEitherT l m) where
   fmap f (ContEitherT kka) = ContEitherT $ \lk rk -> kka lk (rk . f)
-
--- | ContEitherT is a monad on the right. Note that the failure propogates
--- exactly like it would for either, but without needing to be inspected.
-instance Monad (ContEitherT m l) where
-  return = right
-  (ContEitherT kka) >>= f =
-    ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
 
 -- | ContEitherT is an applicative. Written to satisfy ApplicativeMonad,
 -- not used.
-instance Applicative (ContEitherT m l) where
+instance Applicative (ContEitherT l m) where
   pure = right
   (ContEitherT kkf) <*> (ContEitherT kka) =
     ContEitherT $ \lk rk -> kkf lk (\f -> kka lk (rk . f))
@@ -74,8 +78,17 @@ instance Applicative (ContEitherT m l) where
   (ContEitherT kka) <* (ContEitherT kkb) =
     ContEitherT $ \lk rk -> kka lk (\a -> kkb lk (rk . const a))
 
+-- | ContEitherT is a monad on the right. Note that the failure propogates
+-- exactly like it would for either, but without needing to be inspected.
+instance Monad (ContEitherT l m) where
+  return = right
+  (ContEitherT kka) >>= f = ContEitherT $ \lk rk -> kka lk (\a -> runContEitherT (f a) lk rk)
+
+instance MonadTrans (ContEitherT l) where
+  lift mr = ContEitherT $ \lk rk -> mr >>= rk
+
 -- | ContEitherT when we don't need the wrapped monad, just failure.
-type ContEither = ContEitherT Identity
+type ContEither l r = ContEitherT l Identity r
 
 -- | Unwrap ContEither and run it with a success and failure continuation.
 runContEither :: ContEither l r -> (l -> z) -> (r -> z) -> z
@@ -89,13 +102,11 @@ toEither ma = runContEither ma Left Right
 
 -- | Catch for ContEitherT.
 -- Note the similarity to (>>=) above.
-eCatch :: ContEitherT m l r -> (l -> ContEitherT m l r) -> ContEitherT m l r
-eCatch ka handler =
-  ContEitherT $ \lk rk ->
-    runContEitherT ka (\l -> runContEitherT (handler l) lk rk) rk
+eCatch :: ContEitherT l m r -> (l -> ContEitherT l m r) -> ContEitherT l m r
+eCatch ka handler = ContEitherT $ \lk rk -> runContEitherT ka (\l -> runContEitherT (handler l) lk rk) rk
 
 -- | Parse out an AnnounceRequest from an Http Request
-rqAnnounce :: Request -> ContEitherT m B.ByteString AnnounceRequest
+rqAnnounce :: Request -> ContEitherT B.ByteString m AnnounceRequest
 rqAnnounce req = do
   let params = rqQueryParams req
   hash <- grabAndParseParam "info_hash" params parseWord160
@@ -107,7 +118,7 @@ rqAnnounce req = do
   addr <- optionalParseParam "ip" params (parseSockAddr port)
   reqAddr <- parseSockAddr port B8.empty (rqClientAddr req)
   compact <-
-    optionalParseParam "compact" params parseDec :: ContEitherT m B.ByteString (Maybe Word8)
+    optionalParseParam "compact" params parseDec :: ContEitherT B.ByteString m (Maybe Word8)
   failWhen
     "Compact not supported."
     (isJust compact && compact /= Just 1)
@@ -176,7 +187,7 @@ scrapeAction env = do
       writeBS message
       getResponse >>= finishWith
 
-rqGetIpVersion :: Request -> ContEitherT m B.ByteString IpVersion
+rqGetIpVersion :: Request -> ContEitherT B.ByteString m IpVersion
 rqGetIpVersion req = do
   let port = (fromIntegral . rqClientPort) req
   reqAddr <- parseSockAddr port B8.empty (rqClientAddr req)
@@ -191,7 +202,7 @@ completeSnap env =
 
 -- Parsers and Helpers
 -- | Conditional failure given a fail value and a boolean.
-failWhen :: b -> Bool -> ContEitherT m b ()
+failWhen :: b -> Bool -> ContEitherT b m ()
 fallWhen b True = left b
 
 failWhen _ False = right ()
@@ -211,13 +222,13 @@ misformatted key = key <> " not formatted correctly."
 -- | Parsing helper that lifts a parse result to ContEitherT and returns a
 -- message on parse failure.
 maybeParse ::
-     B.ByteString -> B.ByteString -> Parser a -> ContEitherT m B.ByteString a
+     B.ByteString -> B.ByteString -> Parser a -> ContEitherT B.ByteString m a
 maybeParse name = parseOnlyMessage (misformatted name)
 
 -- | Parse a Word160 presented as 20 bytes.
 -- Snap does url decoding for us.
 parseWord160 ::
-     B.ByteString -> B.ByteString -> ContEitherT m B.ByteString Word160
+     B.ByteString -> B.ByteString -> ContEitherT B.ByteString m Word160
 parseWord160 name val =
   case B.length val of
     20 ->
@@ -235,12 +246,12 @@ parseDec ::
      (Integral a)
   => B.ByteString
   -> B.ByteString
-  -> ContEitherT m B.ByteString a
+  -> ContEitherT B.ByteString m a
 parseDec name val = maybeParse name val decimal
 
 -- | Parse a port.
 parsePort ::
-     B.ByteString -> B.ByteString -> ContEitherT m B.ByteString PortNumber
+     B.ByteString -> B.ByteString -> ContEitherT B.ByteString m PortNumber
 parsePort name val = maybeParse name val decimal
 
 -- | Parse a socket address.
@@ -248,7 +259,7 @@ parseSockAddr ::
      PortNumber
   -> B.ByteString
   -> B.ByteString
-  -> ContEitherT m B.ByteString SockAddr
+  -> ContEitherT B.ByteString m SockAddr
 parseSockAddr pnum name val = maybeParse name val parser
   where
     parser =
@@ -316,7 +327,7 @@ parseIp6 = complete6 <|> seperated6
     packSeparated' [a, b, c, d, e, f, g, h] = packComplete a b c d e f g h
 
 -- | Parse a client's reported event.
-parseEvent :: B.ByteString -> B.ByteString -> ContEitherT m B.ByteString Event
+parseEvent :: B.ByteString -> B.ByteString -> ContEitherT B.ByteString m Event
 parseEvent name val = maybeParse name val parser
   where
     parser =
@@ -330,7 +341,7 @@ sepByUpto :: (Alternative f) => Int -> f a -> f s -> f [a]
 sepByUpto k _ _
   | k <= 0 = pure []
 
-sepByUtpo k p sep =
+sepByUpto k p sep =
   liftA2 (:) p ((sep *> sepBy1Upto (k - 1) p sep) <|> pure []) <|> pure []
   where
     sepBy1Upto 0 _ _ = pure []
@@ -339,21 +350,21 @@ sepByUtpo k p sep =
 
 -- | Up Convert a Maybe value to a ContEitherT by supplying a left value for
 -- for the failure case.
-withMessage :: l -> Maybe a -> ContEitherT m l a
+withMessage :: l -> Maybe a -> ContEitherT l m a
 withMessage l = maybe (left l) right
 
 -- | Map on the left. Similar to fmap above.
-mapLeft :: (l1 -> l2) -> ContEitherT m l1 a -> ContEitherT m l2 a
+mapLeft :: (l1 -> l2) -> ContEitherT l1 m a -> ContEitherT l2 m a
 mapLeft f ka = ContEitherT $ \lk rk -> runContEitherT ka (lk . f) rk
 
 -- | Wrap parseOnly by supplying our own error message, and lifting the result
 -- from Either to ContEitherT
-parseOnlyMessage :: b -> B.ByteString -> Parser a -> ContEitherT m b a
+parseOnlyMessage :: b -> B.ByteString -> Parser a -> ContEitherT b m a
 parseOnlyMessage msg raw parser =
   mapLeft (const msg) $ liftEither $ parseOnly parser raw
 
 -- | Fail when a list is not a singleton, and succeed if it is.
-singletonList :: l -> [a] -> ContEitherT m l a
+singletonList :: l -> [a] -> ContEitherT l m a
 singletonList _ [x] = right x
 singletonList l _      = left l
 
@@ -362,7 +373,7 @@ singletonList l _      = left l
 optionalParam ::
      B.ByteString
   -> M.Map B.ByteString [B.ByteString]
-  -> ContEitherT m B.ByteString (Maybe B.ByteString)
+  -> ContEitherT B.ByteString m (Maybe B.ByteString)
 optionalParam key map =
   case M.lookup key map of
     Nothing   -> return Nothing
@@ -373,8 +384,8 @@ optionalParam key map =
 optionalParseParam ::
      B.ByteString
   -> M.Map B.ByteString [B.ByteString]
-  -> (B.ByteString -> B.ByteString -> ContEitherT m B.ByteString a)
-  -> ContEitherT m B.ByteString (Maybe a)
+  -> (B.ByteString -> B.ByteString -> ContEitherT B.ByteString m a)
+  -> ContEitherT B.ByteString m (Maybe a)
 optionalParseParam key map parser = do
   result <- optionalParam key map
   case result of
@@ -385,7 +396,7 @@ optionalParseParam key map parser = do
 grabParam ::
      B.ByteString
   -> M.Map B.ByteString [B.ByteString]
-  -> ContEitherT m B.ByteString B.ByteString
+  -> ContEitherT B.ByteString m B.ByteString
 grabParam key map = do
   vals <- withMessage (missing key) (M.lookup key map)
   singletonList (tooMany key) vals
@@ -395,6 +406,6 @@ grabParam key map = do
 grabAndParseParam ::
      B.ByteString
   -> M.Map B.ByteString [B.ByteString]
-  -> (B.ByteString -> B.ByteString -> ContEitherT m B.ByteString a)
-  -> ContEitherT m B.ByteString a
+  -> (B.ByteString -> B.ByteString -> ContEitherT B.ByteString m a)
+  -> ContEitherT B.ByteString m a
 grabAndParseParam key map parser = grabParam key map >>= parser key
